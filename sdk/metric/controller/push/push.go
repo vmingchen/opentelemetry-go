@@ -28,20 +28,21 @@ import (
 
 // Controller organizes a periodic push of metric data.
 type Controller struct {
-	lock         sync.Mutex
-	collectLock  sync.Mutex
-	accumulator  *sdk.Accumulator
-	resource     *resource.Resource
-	uniq         metric.MeterImpl
-	named        map[string]metric.Meter
-	errorHandler sdk.ErrorHandler
-	integrator   export.Integrator
-	exporter     export.Exporter
-	wg           sync.WaitGroup
-	ch           chan struct{}
-	period       time.Duration
-	ticker       Ticker
-	clock        Clock
+	lock         	sync.Mutex
+	collectLock  	sync.Mutex
+	accumulator  	*sdk.Accumulator
+	resource     	*resource.Resource
+	uniq         	metric.MeterImpl
+	named        	map[string]metric.Meter
+	errorHandler 	sdk.ErrorHandler
+	integrator   	export.Integrator
+	exporter     	export.Exporter
+	wg           	sync.WaitGroup
+	ch           	chan struct{}
+	period       	time.Duration
+	ticker       	Ticker
+	clock        	Clock
+	configLoaderCh  chan struct{}
 }
 
 var _ metric.Provider = &Controller{}
@@ -73,7 +74,8 @@ var _ Ticker = realTicker{}
 // using the provided integrator, exporter, collection period, and SDK
 // configuration options to configure an SDK with periodic collection.
 // The integrator itself is configured with the aggregation selector policy.
-func New(integrator export.Integrator, exporter export.Exporter, period time.Duration, opts ...Option) *Controller {
+func New(integrator export.Integrator, exporter export.Exporter, configLoaderCh chan struct{},
+	period time.Duration, opts ...Option) *Controller {
 	c := &Config{ErrorHandler: sdk.DefaultErrorHandler}
 	for _, opt := range opts {
 		opt.Apply(c)
@@ -81,16 +83,17 @@ func New(integrator export.Integrator, exporter export.Exporter, period time.Dur
 
 	impl := sdk.NewAccumulator(integrator, sdk.WithErrorHandler(c.ErrorHandler))
 	return &Controller{
-		accumulator:  impl,
-		resource:     c.Resource,
-		uniq:         registry.NewUniqueInstrumentMeterImpl(impl),
-		named:        map[string]metric.Meter{},
-		errorHandler: c.ErrorHandler,
-		integrator:   integrator,
-		exporter:     exporter,
-		ch:           make(chan struct{}),
-		period:       period,
-		clock:        realClock{},
+		accumulator:  	impl,
+		resource:     	c.Resource,
+		uniq:         	registry.NewUniqueInstrumentMeterImpl(impl),
+		named:        	map[string]metric.Meter{},
+		errorHandler: 	c.ErrorHandler,
+		integrator:   	integrator,
+		exporter:     	exporter,
+		ch:           	make(chan struct{}),
+		period:       	period,
+		clock:        	realClock{},
+		configLoaderCh: configLoaderCh,
 	}
 }
 
@@ -107,6 +110,12 @@ func (c *Controller) SetErrorHandler(errorHandler sdk.ErrorHandler) {
 	defer c.lock.Unlock()
 	c.errorHandler = errorHandler
 	c.accumulator.SetErrorHandler(errorHandler)
+}
+
+func (c *Controller) SetPeriod(period time.Duration) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	c.period = period
 }
 
 // Meter returns a named Meter, satisifying the metric.Provider
@@ -153,8 +162,11 @@ func (c *Controller) Stop() {
 	c.ch = nil
 	c.wg.Wait()
 	c.ticker.Stop()
+	c.ticker = nil
 
 	c.tick()
+
+	close(c.configLoaderCh)
 }
 
 func (c *Controller) run(ch chan struct{}) {
