@@ -140,12 +140,11 @@ func NewExportPipeline(config Config, period time.Duration, opts ...push.Option)
 		return nil, err
 	}
 	integrator := integrator.New(selector, true)
-	configLoader := dynamicconfigloader.New(10 * time.Second)
-	configLoaderCh := configLoader.GetCh()
+	configLoaderCh := make(chan struct{})
+	configLoader := dynamicconfigloader.New(configLoaderCh, 10 * time.Second)
 	pusher := push.New(integrator, exporter, configLoaderCh, period, opts...)
 	pusher.Start()
-
-	configLoader.Run(pusher)
+	go configLoader.Run(pusher)
 
 	return pusher, nil
 }

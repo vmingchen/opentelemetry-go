@@ -35,5 +35,5 @@ func initMeter() *push.Controller {
 func main() {
 	defer initMeter().Stop()
 
-	time.Sleep(1 * time.Minute)
+	time.Sleep(5 * time.Minute)
 }

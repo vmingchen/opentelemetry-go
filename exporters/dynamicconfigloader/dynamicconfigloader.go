@@ -21,20 +21,18 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
 )
 
+
+// This allows us to dynamically restart the Controller
 type DynamicConfigLoader struct {
 	ch chan struct{}
 	ticker *time.Ticker
 }
 
-func New(refreshFrequency time.Duration) *DynamicConfigLoader {
+func New(ch chan struct{}, refreshFrequency time.Duration) *DynamicConfigLoader {
 	return &DynamicConfigLoader{
-		ch: make(chan struct{}),
+		ch: ch,
 		ticker: time.NewTicker(refreshFrequency),
 	}
-}
-
-func (loader *DynamicConfigLoader) GetCh() chan struct{} {
-	return loader.ch
 }
 
 func (loader *DynamicConfigLoader) Run(controller *push.Controller) {
@@ -52,9 +50,7 @@ func (loader *DynamicConfigLoader) Run(controller *push.Controller) {
 			if newConfigString != originalConfigString {
 				originalConfigString = newConfigString
 
-				controller.Stop()
-				controller.SetPeriod(newConfig.samplingPeriod)
-				controller.Start()
+				controller.RestartTicker(newConfig.samplingPeriod)
 			}
 		}
 

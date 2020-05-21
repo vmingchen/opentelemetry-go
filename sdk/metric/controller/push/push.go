@@ -38,7 +38,7 @@ type Controller struct {
 	integrator   	export.Integrator
 	exporter     	export.Exporter
 	wg           	sync.WaitGroup
-	ch           	chan struct{}
+	ch           	chan bool
 	period       	time.Duration
 	ticker       	Ticker
 	clock        	Clock
@@ -90,7 +90,7 @@ func New(integrator export.Integrator, exporter export.Exporter, configLoaderCh 
 		errorHandler: 	c.ErrorHandler,
 		integrator:   	integrator,
 		exporter:     	exporter,
-		ch:           	make(chan struct{}),
+		ch:           	make(chan bool),
 		period:       	period,
 		clock:        	realClock{},
 		configLoaderCh: configLoaderCh,
@@ -110,12 +110,6 @@ func (c *Controller) SetErrorHandler(errorHandler sdk.ErrorHandler) {
 	defer c.lock.Unlock()
 	c.errorHandler = errorHandler
 	c.accumulator.SetErrorHandler(errorHandler)
-}
-
-func (c *Controller) SetPeriod(period time.Duration) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-	c.period = period
 }
 
 // Meter returns a named Meter, satisifying the metric.Provider
@@ -169,10 +163,23 @@ func (c *Controller) Stop() {
 	close(c.configLoaderCh)
 }
 
-func (c *Controller) run(ch chan struct{}) {
+func (c *Controller) RestartTicker(period time.Duration) {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.ticker.Stop()
+	c.period = period
+	c.ticker = c.clock.Ticker(period)
+	c.ch <- true
+}
+
+func (c *Controller) run(ch chan bool) {
 	for {
 		select {
-		case <-ch:
+		case signal := <-ch:
+			if signal {
+				break
+			}
 			c.wg.Done()
 			return
 		case <-c.ticker.C():
