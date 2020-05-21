@@ -112,7 +112,8 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 
 	selector := simple.NewWithExactMeasure()
 	integrator := integrator.New(selector, true)
-	pusher := push.New(integrator, exp, 60*time.Second)
+	configLoaderCh := make(chan struct{})
+	pusher := push.New(integrator, exp, configLoaderCh, 60*time.Second)
 	pusher.Start()
 
 	ctx := context.Background()

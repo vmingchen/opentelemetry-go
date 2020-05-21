@@ -27,7 +27,7 @@ import (
 	"go.opentelemetry.io/otel/api/label"
 	"go.opentelemetry.io/otel/sdk/resource"
 
-	"go.opentelemetry.io/otel/exporters/dynamicconfigloader"
+	configloader "go.opentelemetry.io/otel/exporters/dynamicconfigloader"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
@@ -141,7 +141,7 @@ func NewExportPipeline(config Config, period time.Duration, opts ...push.Option)
 	}
 	integrator := integrator.New(selector, true)
 	configLoaderCh := make(chan struct{})
-	configLoader := dynamicconfigloader.New(configLoaderCh, 10 * time.Second)
+	configLoader := configloader.New(configLoaderCh, 10 * time.Second)
 	pusher := push.New(integrator, exporter, configLoaderCh, period, opts...)
 	pusher.Start()
 	go configLoader.Run(pusher)

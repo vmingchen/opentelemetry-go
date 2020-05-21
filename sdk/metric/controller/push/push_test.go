@@ -165,7 +165,7 @@ func (t mockTicker) C() <-chan time.Time {
 
 func TestPushDoubleStop(t *testing.T) {
 	fix := newFixture(t)
-	p := push.New(fix.integrator, fix.exporter, time.Second)
+	p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
 	p.Start()
 	p.Stop()
 	p.Stop()
@@ -173,7 +173,7 @@ func TestPushDoubleStop(t *testing.T) {
 
 func TestPushDoubleStart(t *testing.T) {
 	fix := newFixture(t)
-	p := push.New(fix.integrator, fix.exporter, time.Second)
+	p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
 	p.Start()
 	p.Start()
 	p.Stop()
@@ -182,7 +182,7 @@ func TestPushDoubleStart(t *testing.T) {
 func TestPushTicker(t *testing.T) {
 	fix := newFixture(t)
 
-	p := push.New(fix.integrator, fix.exporter, time.Second)
+	p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
 	meter := p.Meter("name")
 
 	mock := mockClock{clock.NewMock()}
@@ -265,7 +265,7 @@ func TestPushExportError(t *testing.T) {
 			fix := newFixture(t)
 			fix.exporter.injectErr = injector("counter1", tt.injectedError)
 
-			p := push.New(fix.integrator, fix.exporter, time.Second)
+			p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
 
 			var err error
 			var lock sync.Mutex

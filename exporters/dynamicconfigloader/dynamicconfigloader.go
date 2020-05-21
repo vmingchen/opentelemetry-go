@@ -28,6 +28,8 @@ type DynamicConfigLoader struct {
 	ticker *time.Ticker
 }
 
+// ch is used to stop the config loader when the pusher stops
+// ticker is used to control how often we check the config for changes
 func New(ch chan struct{}, refreshFrequency time.Duration) *DynamicConfigLoader {
 	return &DynamicConfigLoader{
 		ch: ch,
@@ -40,6 +42,7 @@ func (loader *DynamicConfigLoader) Run(controller *push.Controller) {
 
 	for {
 		select {
+		// The controller shuts down the config loader when it stops
 		case <-loader.ch:
 			loader.ticker.Stop()
 			return
@@ -53,14 +56,17 @@ func (loader *DynamicConfigLoader) Run(controller *push.Controller) {
 				controller.RestartTicker(newConfig.samplingPeriod)
 			}
 		}
-
 	}
 }
 
+// TODO: Create actual config structure
 type Config struct {
 	samplingPeriod time.Duration
 }
 
+
+// TODO: Read actual config from IP address
+// Right now we just return a samplingPeriod of 2 seconds
 func readConfig() *Config {
 	return &Config{
 		samplingPeriod: 2 * time.Second,

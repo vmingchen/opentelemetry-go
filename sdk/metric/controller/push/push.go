@@ -167,15 +167,21 @@ func (c *Controller) RestartTicker(period time.Duration) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
+	// Stop the existing ticker
+	// Make a new ticker with the new sampling period
 	c.ticker.Stop()
 	c.period = period
 	c.ticker = c.clock.Ticker(period)
+
+	// Let the controller know to check the new ticker
 	c.ch <- true
 }
 
 func (c *Controller) run(ch chan bool) {
 	for {
 		select {
+		// If signal receives 'true', break to check the new ticker
+		// If signal receives 'false', that means controller is stopping
 		case signal := <-ch:
 			if signal {
 				break
