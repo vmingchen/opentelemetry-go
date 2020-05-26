@@ -29,21 +29,21 @@ import (
 
 // Controller organizes a periodic push of metric data.
 type Controller struct {
-	lock         	sync.Mutex
-	collectLock  	sync.Mutex
-	accumulator  	*sdk.Accumulator
-	resource     	*resource.Resource
-	uniq         	metric.MeterImpl
-	named        	map[string]metric.Meter
-	errorHandler 	sdk.ErrorHandler
-	integrator   	export.Integrator
-	exporter     	export.Exporter
-	wg           	sync.WaitGroup
-	ch           	chan bool
-	period       	time.Duration
-	ticker       	Ticker
-	clock        	Clock
-	configNotifier  *notifier.ConfigNotifier
+	lock           sync.Mutex
+	collectLock    sync.Mutex
+	accumulator    *sdk.Accumulator
+	resource       *resource.Resource
+	uniq           metric.MeterImpl
+	named          map[string]metric.Meter
+	errorHandler   sdk.ErrorHandler
+	integrator     export.Integrator
+	exporter       export.Exporter
+	wg             sync.WaitGroup
+	ch             chan bool
+	period         time.Duration
+	ticker         Ticker
+	clock          Clock
+	configNotifier *notifier.ConfigNotifier
 }
 
 var _ metric.Provider = &Controller{}
@@ -84,16 +84,16 @@ func New(integrator export.Integrator, exporter export.Exporter, configNotifier 
 
 	impl := sdk.NewAccumulator(integrator, sdk.WithErrorHandler(c.ErrorHandler))
 	return &Controller{
-		accumulator:  	impl,
-		resource:     	c.Resource,
-		uniq:         	registry.NewUniqueInstrumentMeterImpl(impl),
-		named:        	map[string]metric.Meter{},
-		errorHandler: 	c.ErrorHandler,
-		integrator:   	integrator,
-		exporter:     	exporter,
-		ch:           	make(chan bool),
+		accumulator:    impl,
+		resource:       c.Resource,
+		uniq:           registry.NewUniqueInstrumentMeterImpl(impl),
+		named:          map[string]metric.Meter{},
+		errorHandler:   c.ErrorHandler,
+		integrator:     integrator,
+		exporter:       exporter,
+		ch:             make(chan bool),
 		period:         time.Minute,
-		clock:        	realClock{},
+		clock:          realClock{},
 		configNotifier: configNotifier,
 	}
 }

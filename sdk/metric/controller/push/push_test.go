@@ -79,7 +79,7 @@ func newFixture(t *testing.T) testFixture {
 	exporter := &testExporter{
 		t: t,
 	}
-	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{ Period: time.Minute })
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Minute})
 	return testFixture{
 		checkpointSet:  checkpointSet,
 		integrator:     integrator,

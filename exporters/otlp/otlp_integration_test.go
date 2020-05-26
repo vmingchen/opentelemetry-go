@@ -113,7 +113,7 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 
 	selector := simple.NewWithExactMeasure()
 	integrator := integrator.New(selector, true)
-	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{ Period: time.Minute })
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Minute})
 	pusher := push.New(integrator, exp, configNotifier)
 	pusher.Start()
 

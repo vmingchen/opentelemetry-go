@@ -56,15 +56,15 @@ type ConfigWatcher interface {
 
 type ConfigNotifier struct {
 	checkFrequency time.Duration
-	config *MetricConfig
-	subscribed map[ConfigWatcher]bool
+	config         *MetricConfig
+	subscribed     map[ConfigWatcher]bool
 }
 
 func New(checkFrequency time.Duration, config *MetricConfig) *ConfigNotifier {
 	return &ConfigNotifier{
 		checkFrequency: checkFrequency,
-		config: config,
-		subscribed: make(map[ConfigWatcher]bool),
+		config:         config,
+		subscribed:     make(map[ConfigWatcher]bool),
 	}
 }
 
