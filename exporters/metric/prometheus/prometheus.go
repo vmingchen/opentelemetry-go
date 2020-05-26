@@ -27,7 +27,7 @@ import (
 
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/label"
-	configloader "go.opentelemetry.io/otel/exporters/dynamicconfigloader"
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
@@ -163,11 +163,14 @@ func NewExportPipeline(config Config, period time.Duration) (*push.Controller, h
 	//
 	// Gauges (or LastValues) and Summaries are an exception to this and have different behaviors.
 	integrator := integrator.New(selector, true)
-	configLoaderCh := make(chan struct{})
-	configLoader := configloader.New(configLoaderCh, 10 * time.Second)
-	pusher := push.New(integrator, exporter, configLoaderCh, period)
+	metricConfig := &notifier.MetricConfig {
+		Period: period,
+	}
+	configNotifier := notifier.New(10 * time.Second, metricConfig)
+	pusher := push.New(integrator, exporter, configNotifier)
+	pusher.OnInitialConfig(metricConfig)
 	pusher.Start()
-	go configLoader.Run(pusher)
+	go configNotifier.CheckChanges()
 
 	return pusher, exporter.ServeHTTP, nil
 }

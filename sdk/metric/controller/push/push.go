@@ -21,6 +21,7 @@ import (
 
 	"go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/api/metric/registry"
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	sdk "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -42,7 +43,7 @@ type Controller struct {
 	period       	time.Duration
 	ticker       	Ticker
 	clock        	Clock
-	configLoaderCh  chan struct{}
+	configNotifier  *notifier.ConfigNotifier
 }
 
 var _ metric.Provider = &Controller{}
@@ -74,8 +75,8 @@ var _ Ticker = realTicker{}
 // using the provided integrator, exporter, collection period, and SDK
 // configuration options to configure an SDK with periodic collection.
 // The integrator itself is configured with the aggregation selector policy.
-func New(integrator export.Integrator, exporter export.Exporter, configLoaderCh chan struct{},
-	period time.Duration, opts ...Option) *Controller {
+func New(integrator export.Integrator, exporter export.Exporter, configNotifier *notifier.ConfigNotifier,
+	opts ...Option) *Controller {
 	c := &Config{ErrorHandler: sdk.DefaultErrorHandler}
 	for _, opt := range opts {
 		opt.Apply(c)
@@ -91,9 +92,9 @@ func New(integrator export.Integrator, exporter export.Exporter, configLoaderCh 
 		integrator:   	integrator,
 		exporter:     	exporter,
 		ch:           	make(chan bool),
-		period:       	period,
+		period:         time.Minute,
 		clock:        	realClock{},
-		configLoaderCh: configLoaderCh,
+		configNotifier: configNotifier,
 	}
 }
 
@@ -139,6 +140,7 @@ func (c *Controller) Start() {
 
 	c.ticker = c.clock.Ticker(c.period)
 	c.wg.Add(1)
+	c.configNotifier.Register(c)
 	go c.run(c.ch)
 }
 
@@ -157,21 +159,24 @@ func (c *Controller) Stop() {
 	c.wg.Wait()
 	c.ticker.Stop()
 	c.ticker = nil
+	c.configNotifier.Unregister(c)
 
 	c.tick()
-
-	close(c.configLoaderCh)
 }
 
-func (c *Controller) RestartTicker(period time.Duration) {
+func (c *Controller) OnInitialConfig(config *notifier.MetricConfig) {
+	c.period = config.Period
+}
+
+func (c *Controller) OnUpdatedConfig(config *notifier.MetricConfig) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	// Stop the existing ticker
 	// Make a new ticker with the new sampling period
 	c.ticker.Stop()
-	c.period = period
-	c.ticker = c.clock.Ticker(period)
+	c.period = config.Period
+	c.ticker = c.clock.Ticker(config.Period)
 
 	// Let the controller know to check the new ticker
 	c.ch <- true

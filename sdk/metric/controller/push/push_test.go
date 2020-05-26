@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.opentelemetry.io/otel/api/metric"
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	"go.opentelemetry.io/otel/exporters/metric/test"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
@@ -51,9 +52,10 @@ type testExporter struct {
 }
 
 type testFixture struct {
-	checkpointSet *test.CheckpointSet
-	integrator    *testIntegrator
-	exporter      *testExporter
+	checkpointSet  *test.CheckpointSet
+	integrator     *testIntegrator
+	exporter       *testExporter
+	configNotifier *notifier.ConfigNotifier
 }
 
 type mockClock struct {
@@ -77,10 +79,12 @@ func newFixture(t *testing.T) testFixture {
 	exporter := &testExporter{
 		t: t,
 	}
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{ Period: time.Minute })
 	return testFixture{
-		checkpointSet: checkpointSet,
-		integrator:    integrator,
-		exporter:      exporter,
+		checkpointSet:  checkpointSet,
+		integrator:     integrator,
+		exporter:       exporter,
+		configNotifier: configNotifier,
 	}
 }
 
@@ -165,7 +169,7 @@ func (t mockTicker) C() <-chan time.Time {
 
 func TestPushDoubleStop(t *testing.T) {
 	fix := newFixture(t)
-	p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
+	p := push.New(fix.integrator, fix.exporter, fix.configNotifier)
 	p.Start()
 	p.Stop()
 	p.Stop()
@@ -173,7 +177,7 @@ func TestPushDoubleStop(t *testing.T) {
 
 func TestPushDoubleStart(t *testing.T) {
 	fix := newFixture(t)
-	p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
+	p := push.New(fix.integrator, fix.exporter, fix.configNotifier)
 	p.Start()
 	p.Start()
 	p.Stop()
@@ -182,7 +186,7 @@ func TestPushDoubleStart(t *testing.T) {
 func TestPushTicker(t *testing.T) {
 	fix := newFixture(t)
 
-	p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
+	p := push.New(fix.integrator, fix.exporter, fix.configNotifier)
 	meter := p.Meter("name")
 
 	mock := mockClock{clock.NewMock()}
@@ -203,7 +207,7 @@ func TestPushTicker(t *testing.T) {
 	require.Equal(t, 0, exports)
 	require.Equal(t, 0, len(records))
 
-	mock.Add(time.Second)
+	mock.Add(time.Minute)
 	runtime.Gosched()
 
 	records, exports = fix.exporter.resetRecords()
@@ -222,7 +226,7 @@ func TestPushTicker(t *testing.T) {
 
 	counter.Add(ctx, 7)
 
-	mock.Add(time.Second)
+	mock.Add(time.Minute)
 	runtime.Gosched()
 
 	records, exports = fix.exporter.resetRecords()
@@ -265,7 +269,7 @@ func TestPushExportError(t *testing.T) {
 			fix := newFixture(t)
 			fix.exporter.injectErr = injector("counter1", tt.injectedError)
 
-			p := push.New(fix.integrator, fix.exporter, make(chan struct{}), time.Second)
+			p := push.New(fix.integrator, fix.exporter, fix.configNotifier)
 
 			var err error
 			var lock sync.Mutex
@@ -293,7 +297,7 @@ func TestPushExportError(t *testing.T) {
 			require.Equal(t, 0, fix.exporter.exports)
 			require.Nil(t, err)
 
-			mock.Add(time.Second)
+			mock.Add(time.Minute)
 			runtime.Gosched()
 
 			records, exports := fix.exporter.resetRecords()

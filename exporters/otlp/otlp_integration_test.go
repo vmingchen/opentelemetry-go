@@ -30,6 +30,7 @@ import (
 	"go.opentelemetry.io/otel/api/key"
 	"go.opentelemetry.io/otel/api/metric"
 	metricapi "go.opentelemetry.io/otel/api/metric"
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	"go.opentelemetry.io/otel/exporters/otlp"
 	exporttrace "go.opentelemetry.io/otel/sdk/export/trace"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
@@ -112,8 +113,8 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 
 	selector := simple.NewWithExactMeasure()
 	integrator := integrator.New(selector, true)
-	configLoaderCh := make(chan struct{})
-	pusher := push.New(integrator, exp, configLoaderCh, 60*time.Second)
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{ Period: time.Minute })
+	pusher := push.New(integrator, exp, configNotifier)
 	pusher.Start()
 
 	ctx := context.Background()
