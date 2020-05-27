@@ -60,23 +60,29 @@ type ConfigNotifier struct {
 	subscribed     map[ConfigWatcher]bool
 }
 
+// Constructor for a ConfigNotifier, also starts it running
 func New(checkFrequency time.Duration, config *MetricConfig) *ConfigNotifier {
-	return &ConfigNotifier{
+	configNotifier := &ConfigNotifier{
 		checkFrequency: checkFrequency,
 		config:         config,
 		subscribed:     make(map[ConfigWatcher]bool),
 	}
+
+	go configNotifier.checkChanges()
+
+	return configNotifier
 }
 
 func (notifier *ConfigNotifier) Register(watcher ConfigWatcher) {
 	notifier.subscribed[watcher] = true
+	watcher.OnInitialConfig(notifier.config)
 }
 
 func (notifier *ConfigNotifier) Unregister(watcher ConfigWatcher) {
 	delete(notifier.subscribed, watcher)
 }
 
-func (notifier *ConfigNotifier) CheckChanges() {
+func (notifier *ConfigNotifier) checkChanges() {
 	for {
 		time.Sleep(notifier.checkFrequency)
 
@@ -85,7 +91,7 @@ func (notifier *ConfigNotifier) CheckChanges() {
 		if !notifier.config.equals(newConfig) {
 			notifier.config = newConfig
 
-			for watcher, _ := range notifier.subscribed {
+			for watcher := range notifier.subscribed {
 				watcher.OnUpdatedConfig(newConfig)
 			}
 		}

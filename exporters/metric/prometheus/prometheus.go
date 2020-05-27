@@ -168,9 +168,7 @@ func NewExportPipeline(config Config, period time.Duration) (*push.Controller, h
 	}
 	configNotifier := notifier.New(10*time.Second, metricConfig)
 	pusher := push.New(integrator, exporter, configNotifier)
-	pusher.OnInitialConfig(metricConfig)
 	pusher.Start()
-	go configNotifier.CheckChanges()
 
 	return pusher, exporter.ServeHTTP, nil
 }
