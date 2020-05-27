@@ -16,6 +16,7 @@ package dynamicconfig
 
 import (
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,7 @@ type MetricConfig struct {
 	Period time.Duration
 }
 
+// TODO: Replace with something better when we have a solid config spec
 func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
 	if config == nil && otherConfig == nil {
 		return true
@@ -42,10 +44,21 @@ func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
 }
 
 // TODO: Read actual config from host
-// Right now we just return a fixed config
-func readConfig() *MetricConfig {
+// We don't do anything with the configHost string right now
+// TIMES_READ_TEST is for testing purposes, to mimic a dynamic service
+// The second time we call readConfig, the sampling period changes
+var TIMES_CONFIG_READ_TEST = 0
+func readConfig(configHost string) *MetricConfig {
+	period := 10 * time.Second
+
+	if TIMES_CONFIG_READ_TEST > 0 {
+		period = 2 * time.Second
+	}
+
+	TIMES_CONFIG_READ_TEST++
+
 	return &MetricConfig{
-		Period: 2 * time.Second,
+		Period: period,
 	}
 }
 
@@ -57,37 +70,62 @@ type ConfigWatcher interface {
 type ConfigNotifier struct {
 	checkFrequency time.Duration
 	config         *MetricConfig
+	configLock     sync.Mutex
+	configHost     string
 	subscribed     map[ConfigWatcher]bool
+	subscribedLock sync.Mutex
 }
 
-// Constructor for a ConfigNotifier, also starts it running
-func New(checkFrequency time.Duration, config *MetricConfig) *ConfigNotifier {
+// Constructor for a ConfigNotifier
+// Set configHost to "" if there is no remote config service and the config is not dynamic
+func New(checkFrequency time.Duration, defaultConfig *MetricConfig, configHost string) *ConfigNotifier {
+	config := defaultConfig
+	if configHost != "" {
+		config = readConfig(configHost)
+	}
+
 	configNotifier := &ConfigNotifier{
 		checkFrequency: checkFrequency,
 		config:         config,
+		configHost:     configHost,
 		subscribed:     make(map[ConfigWatcher]bool),
 	}
-
-	go configNotifier.checkChanges()
 
 	return configNotifier
 }
 
+func (notifier *ConfigNotifier) Start() {
+	go notifier.checkChanges()
+}
+
 func (notifier *ConfigNotifier) Register(watcher ConfigWatcher) {
+	notifier.subscribedLock.Lock()
 	notifier.subscribed[watcher] = true
+	notifier.subscribedLock.Unlock()
+
+	notifier.configLock.Lock()
 	watcher.OnInitialConfig(notifier.config)
+	notifier.configLock.Unlock()
 }
 
 func (notifier *ConfigNotifier) Unregister(watcher ConfigWatcher) {
+	notifier.subscribedLock.Lock()
+	defer notifier.subscribedLock.Unlock()
+
 	delete(notifier.subscribed, watcher)
 }
 
 func (notifier *ConfigNotifier) checkChanges() {
+	if notifier.configHost == "" {
+		return
+	}
+
 	for {
 		time.Sleep(notifier.checkFrequency)
 
-		newConfig := readConfig()
+		newConfig := readConfig(notifier.configHost)
 
+		notifier.configLock.Lock()
 		if !notifier.config.equals(newConfig) {
 			notifier.config = newConfig
 
@@ -95,5 +133,6 @@ func (notifier *ConfigNotifier) checkChanges() {
 				watcher.OnUpdatedConfig(newConfig)
 			}
 		}
+		notifier.configLock.Unlock()
 	}
 }

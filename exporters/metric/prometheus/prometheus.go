@@ -163,10 +163,14 @@ func NewExportPipeline(config Config, period time.Duration) (*push.Controller, h
 	//
 	// Gauges (or LastValues) and Summaries are an exception to this and have different behaviors.
 	integrator := integrator.New(selector, true)
+
+	// In this case we don't have a remote config service
+	// We just have a constant default config, and we don't need to start the configNotifier
 	metricConfig := &notifier.MetricConfig{
 		Period: period,
 	}
-	configNotifier := notifier.New(10*time.Second, metricConfig)
+	configNotifier := notifier.New(10*time.Second, metricConfig, "")
+	
 	pusher := push.New(integrator, exporter, configNotifier)
 	pusher.Start()
 

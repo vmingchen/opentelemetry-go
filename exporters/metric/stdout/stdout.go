@@ -140,10 +140,12 @@ func NewExportPipeline(config Config, period time.Duration, opts ...push.Option)
 		return nil, err
 	}
 	integrator := integrator.New(selector, true)
-	metricConfig := &notifier.MetricConfig{
-		Period: period,
-	}
-	configNotifier := notifier.New(10*time.Second, metricConfig)
+
+	// In this case we have a remote config service
+	// We don't need to have a default config, and we do need to start the ConfigNotifier
+	configNotifier := notifier.New(10*time.Second, nil, "FAKE_HOSTNAME")
+	configNotifier.Start()
+
 	pusher := push.New(integrator, exporter, configNotifier, opts...)
 	pusher.Start()
 
