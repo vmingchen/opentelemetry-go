@@ -48,6 +48,7 @@ func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
 // TIMES_READ_TEST is for testing purposes, to mimic a dynamic service
 // The second time we call readConfig, the sampling period changes
 var TIMES_CONFIG_READ_TEST = 0
+
 func readConfig(configHost string) *MetricConfig {
 	period := 10 * time.Second
 

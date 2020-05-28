@@ -19,10 +19,9 @@ import (
 	"strings"
 	"testing"
 
-	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/global/internal"
-	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/api/trace"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
@@ -60,7 +59,7 @@ func (*benchFixture) AggregatorFor(descriptor *metric.Descriptor) export.Aggrega
 	switch descriptor.MetricKind() {
 	case metric.CounterKind:
 		return sum.New()
-	case metric.MeasureKind:
+	case metric.ValueRecorderKind:
 		if strings.HasSuffix(descriptor.Name(), "minmaxsumcount") {
 			return minmaxsumcount.New(descriptor)
 		} else if strings.HasSuffix(descriptor.Name(), "ddsketch") {
@@ -91,7 +90,7 @@ func BenchmarkGlobalInt64CounterAddNoSDK(b *testing.B) {
 	internal.ResetForTest()
 	ctx := context.Background()
 	sdk := global.Meter("test")
-	labs := []core.KeyValue{key.String("A", "B")}
+	labs := []kv.KeyValue{kv.String("A", "B")}
 	cnt := Must(sdk).NewInt64Counter("int64.counter")
 
 	b.ResetTimer()
@@ -110,7 +109,7 @@ func BenchmarkGlobalInt64CounterAddWithSDK(b *testing.B) {
 
 	global.SetMeterProvider(fix)
 
-	labs := []core.KeyValue{key.String("A", "B")}
+	labs := []kv.KeyValue{kv.String("A", "B")}
 	cnt := Must(sdk).NewInt64Counter("int64.counter")
 
 	b.ResetTimer()

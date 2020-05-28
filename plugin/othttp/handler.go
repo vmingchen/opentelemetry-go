@@ -18,9 +18,10 @@ import (
 	"io"
 	"net/http"
 
-	"go.opentelemetry.io/otel/api/core"
 	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/propagation"
+	"go.opentelemetry.io/otel/api/standard"
 	"go.opentelemetry.io/otel/api/trace"
 )
 
@@ -29,7 +30,7 @@ var _ http.Handler = &Handler{}
 // Handler is http middleware that corresponds to the http.Handler interface and
 // is designed to wrap a http.Mux (or equivalent), while individual routes on
 // the mux are wrapped with WithRouteTag. A Handler will add various attributes
-// to the span using the core.Keys defined in this package.
+// to the span using the kv.Keys defined in this package.
 type Handler struct {
 	operation string
 	handler   http.Handler
@@ -88,7 +89,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	opts := append([]trace.StartOption{}, h.spanStartOptions...) // start with the configured options
+	opts := append([]trace.StartOption{
+		trace.WithAttributes(standard.NetAttributesFromHTTPRequest("tcp", r)...),
+		trace.WithAttributes(standard.EndUserAttributesFromHTTPRequest(r)...),
+		trace.WithAttributes(standard.HTTPServerAttributesFromHTTPRequest(h.operation, "", r)...),
+	}, h.spanStartOptions...) // start with the configured options
 
 	ctx := propagation.ExtractHTTP(r.Context(), h.propagators, r.Header)
 	ctx, span := h.tracer.Start(ctx, h.spanNameFormatter(h.operation, r), opts...)
@@ -112,16 +117,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	rww := &respWriterWrapper{ResponseWriter: w, record: writeRecordFunc, ctx: ctx, props: h.propagators}
 
-	setBasicAttributes(span, r)
-	span.SetAttributes(RemoteAddrKey.String(r.RemoteAddr))
-
 	h.handler.ServeHTTP(rww, r.WithContext(ctx))
 
-	setAfterServeAttributes(span, bw.read, rww.written, int64(rww.statusCode), bw.err, rww.err)
+	setAfterServeAttributes(span, bw.read, rww.written, rww.statusCode, bw.err, rww.err)
 }
 
-func setAfterServeAttributes(span trace.Span, read, wrote, statusCode int64, rerr, werr error) {
-	kv := make([]core.KeyValue, 0, 5)
+func setAfterServeAttributes(span trace.Span, read, wrote int64, statusCode int, rerr, werr error) {
+	kv := []kv.KeyValue{}
+
 	// TODO: Consider adding an event after each read and write, possibly as an
 	// option (defaulting to off), so as to not create needlessly verbose spans.
 	if read > 0 {
@@ -134,7 +137,7 @@ func setAfterServeAttributes(span trace.Span, read, wrote, statusCode int64, rer
 		kv = append(kv, WroteBytesKey.Int64(wrote))
 	}
 	if statusCode > 0 {
-		kv = append(kv, StatusCodeKey.Int64(statusCode))
+		kv = append(kv, standard.HTTPAttributesFromHTTPStatusCode(statusCode)...)
 	}
 	if werr != nil && werr != io.EOF {
 		kv = append(kv, WriteErrorKey.String(werr.Error()))
@@ -147,7 +150,7 @@ func setAfterServeAttributes(span trace.Span, read, wrote, statusCode int64, rer
 func WithRouteTag(route string, h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		span := trace.SpanFromContext(r.Context())
-		span.SetAttributes(RouteKey.String(route))
+		span.SetAttributes(standard.HTTPRouteKey.String(route))
 		h.ServeHTTP(w, r)
 	})
 }

@@ -19,14 +19,14 @@ import (
 	"fmt"
 	"strings"
 
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/label"
 	"go.opentelemetry.io/otel/api/metric"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator/lastvalue"
 	"go.opentelemetry.io/otel/sdk/metric/aggregator/sum"
+	"go.opentelemetry.io/otel/sdk/resource"
 )
 
 type (
@@ -46,11 +46,14 @@ type (
 )
 
 var (
+	// Resource is applied to all test records built in this package.
+	Resource = resource.New(kv.String("R", "V"))
+
 	// LastValueADesc and LastValueBDesc group by "G"
 	LastValueADesc = metric.NewDescriptor(
-		"lastvalue.a", metric.ObserverKind, metric.Int64NumberKind)
+		"lastvalue.a", metric.ValueObserverKind, metric.Int64NumberKind)
 	LastValueBDesc = metric.NewDescriptor(
-		"lastvalue.b", metric.ObserverKind, metric.Int64NumberKind)
+		"lastvalue.b", metric.ValueObserverKind, metric.Int64NumberKind)
 	// CounterADesc and CounterBDesc group by "C"
 	CounterADesc = metric.NewDescriptor(
 		"sum.a", metric.CounterKind, metric.Int64NumberKind)
@@ -66,9 +69,9 @@ var (
 	// Counter groups are (labels1+labels2), (labels3)
 
 	// Labels1 has G=H and C=D
-	Labels1 = makeLabels(key.String("G", "H"), key.String("C", "D"))
+	Labels1 = makeLabels(kv.String("G", "H"), kv.String("C", "D"))
 	// Labels2 has C=D and E=F
-	Labels2 = makeLabels(key.String("C", "D"), key.String("E", "F"))
+	Labels2 = makeLabels(kv.String("C", "D"), kv.String("E", "F"))
 	// Labels3 is the empty set
 	Labels3 = makeLabels()
 
@@ -84,7 +87,7 @@ func NewOutput(labelEncoder label.Encoder) Output {
 
 // NewAggregationSelector returns a policy that is consistent with the
 // test descriptors above.  I.e., it returns sum.New() for counter
-// instruments and lastvalue.New for lastValue instruments.
+// instruments and lastvalue.New() for lastValue instruments.
 func NewAggregationSelector() export.AggregationSelector {
 	return &testAggregationSelector{}
 }
@@ -93,14 +96,14 @@ func (*testAggregationSelector) AggregatorFor(desc *metric.Descriptor) export.Ag
 	switch desc.MetricKind() {
 	case metric.CounterKind:
 		return sum.New()
-	case metric.ObserverKind:
+	case metric.ValueObserverKind:
 		return lastvalue.New()
 	default:
 		panic("Invalid descriptor MetricKind for this test")
 	}
 }
 
-func makeLabels(labels ...core.KeyValue) *label.Set {
+func makeLabels(labels ...kv.KeyValue) *label.Set {
 	s := label.NewSet(labels...)
 	return &s
 }
@@ -134,12 +137,12 @@ func LastValueAgg(desc *metric.Descriptor, v int64) export.Aggregator {
 
 // Convenience method for building a test exported lastValue record.
 func NewLastValueRecord(desc *metric.Descriptor, labels *label.Set, value int64) export.Record {
-	return export.NewRecord(desc, labels, LastValueAgg(desc, value))
+	return export.NewRecord(desc, labels, Resource, LastValueAgg(desc, value))
 }
 
 // Convenience method for building a test exported counter record.
 func NewCounterRecord(desc *metric.Descriptor, labels *label.Set, value int64) export.Record {
-	return export.NewRecord(desc, labels, CounterAgg(desc, value))
+	return export.NewRecord(desc, labels, Resource, CounterAgg(desc, value))
 }
 
 // CounterAgg returns a checkpointed counter aggregator w/ the specified descriptor and value.
@@ -155,7 +158,8 @@ func CounterAgg(desc *metric.Descriptor, v int64) export.Aggregator {
 // value to the output map.
 func (o Output) AddTo(rec export.Record) error {
 	encoded := rec.Labels().Encoded(o.labelEncoder)
-	key := fmt.Sprint(rec.Descriptor().Name(), "/", encoded)
+	rencoded := rec.Resource().Encoded(o.labelEncoder)
+	key := fmt.Sprint(rec.Descriptor().Name(), "/", encoded, "/", rencoded)
 	var value float64
 
 	if s, ok := rec.Aggregator().(aggregator.Sum); ok {

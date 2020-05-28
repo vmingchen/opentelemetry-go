@@ -26,8 +26,7 @@ import (
 
 	metricpb "github.com/open-telemetry/opentelemetry-proto/gen/go/metrics/v1"
 
-	"go.opentelemetry.io/otel/api/core"
-	"go.opentelemetry.io/otel/api/key"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/metric"
 	metricapi "go.opentelemetry.io/otel/api/metric"
 	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
@@ -36,6 +35,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
 	integrator "go.opentelemetry.io/otel/sdk/metric/integrator/simple"
 	"go.opentelemetry.io/otel/sdk/metric/selector/simple"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
@@ -83,18 +83,22 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 	pOpts := []sdktrace.ProviderOption{
 		sdktrace.WithConfig(sdktrace.Config{DefaultSampler: sdktrace.AlwaysSample()}),
 		sdktrace.WithBatcher(exp, // add following two options to ensure flush
-			sdktrace.WithScheduleDelayMillis(15),
+			sdktrace.WithBatchTimeout(15),
 			sdktrace.WithMaxExportBatchSize(10),
 		),
 	}
 	tp1, err := sdktrace.NewProvider(append(pOpts,
-		sdktrace.WithResourceAttributes(key.String("rk1", "rv11)"),
-			key.Int64("rk2", 5)))...)
+		sdktrace.WithResource(resource.New(
+			kv.String("rk1", "rv11)"),
+			kv.Int64("rk2", 5),
+		)))...)
 	assert.NoError(t, err)
 
 	tp2, err := sdktrace.NewProvider(append(pOpts,
-		sdktrace.WithResourceAttributes(key.String("rk1", "rv12)"),
-			key.Float32("rk3", 6.5)))...)
+		sdktrace.WithResource(resource.New(
+			kv.String("rk1", "rv12)"),
+			kv.Float32("rk3", 6.5),
+		)))...)
 	assert.NoError(t, err)
 
 	tr1 := tp1.Tracer("test-tracer1")
@@ -103,23 +107,23 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 	m := 4
 	for i := 0; i < m; i++ {
 		_, span := tr1.Start(context.Background(), "AlwaysSample")
-		span.SetAttributes(key.Int64("i", int64(i)))
+		span.SetAttributes(kv.Int64("i", int64(i)))
 		span.End()
 
 		_, span = tr2.Start(context.Background(), "AlwaysSample")
-		span.SetAttributes(key.Int64("i", int64(i)))
+		span.SetAttributes(kv.Int64("i", int64(i)))
 		span.End()
 	}
 
-	selector := simple.NewWithExactMeasure()
+	selector := simple.NewWithExactDistribution()
 	integrator := integrator.New(selector, true)
 	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Minute})
 	pusher := push.New(integrator, exp, configNotifier)
 	pusher.Start()
 
 	ctx := context.Background()
-	meter := pusher.Meter("test-meter")
-	labels := []core.KeyValue{key.Bool("test", true)}
+	meter := pusher.Provider().Meter("test-meter")
+	labels := []kv.KeyValue{kv.Bool("test", true)}
 
 	type data struct {
 		iKind metric.Kind
@@ -127,12 +131,12 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 		val   int64
 	}
 	instruments := map[string]data{
-		"test-int64-counter":    {metric.CounterKind, metricapi.Int64NumberKind, 1},
-		"test-float64-counter":  {metric.CounterKind, metricapi.Float64NumberKind, 1},
-		"test-int64-measure":    {metric.MeasureKind, metricapi.Int64NumberKind, 2},
-		"test-float64-measure":  {metric.MeasureKind, metricapi.Float64NumberKind, 2},
-		"test-int64-observer":   {metric.ObserverKind, metricapi.Int64NumberKind, 3},
-		"test-float64-observer": {metric.ObserverKind, metricapi.Float64NumberKind, 3},
+		"test-int64-counter":         {metric.CounterKind, metricapi.Int64NumberKind, 1},
+		"test-float64-counter":       {metric.CounterKind, metricapi.Float64NumberKind, 1},
+		"test-int64-valuerecorder":   {metric.ValueRecorderKind, metricapi.Int64NumberKind, 2},
+		"test-float64-valuerecorder": {metric.ValueRecorderKind, metricapi.Float64NumberKind, 2},
+		"test-int64-valueobserver":   {metric.ValueObserverKind, metricapi.Int64NumberKind, 3},
+		"test-float64-valueobserver": {metric.ValueObserverKind, metricapi.Float64NumberKind, 3},
 	}
 	for name, data := range instruments {
 		switch data.iKind {
@@ -145,27 +149,27 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 			default:
 				assert.Failf(t, "unsupported number testing kind", data.nKind.String())
 			}
-		case metric.MeasureKind:
+		case metric.ValueRecorderKind:
 			switch data.nKind {
 			case metricapi.Int64NumberKind:
-				metricapi.Must(meter).NewInt64Measure(name).Record(ctx, data.val, labels...)
+				metricapi.Must(meter).NewInt64ValueRecorder(name).Record(ctx, data.val, labels...)
 			case metricapi.Float64NumberKind:
-				metricapi.Must(meter).NewFloat64Measure(name).Record(ctx, float64(data.val), labels...)
+				metricapi.Must(meter).NewFloat64ValueRecorder(name).Record(ctx, float64(data.val), labels...)
 			default:
 				assert.Failf(t, "unsupported number testing kind", data.nKind.String())
 			}
-		case metric.ObserverKind:
+		case metric.ValueObserverKind:
 			switch data.nKind {
 			case metricapi.Int64NumberKind:
 				callback := func(v int64) metricapi.Int64ObserverCallback {
-					return metricapi.Int64ObserverCallback(func(result metricapi.Int64ObserverResult) { result.Observe(v, labels...) })
+					return metricapi.Int64ObserverCallback(func(_ context.Context, result metricapi.Int64ObserverResult) { result.Observe(v, labels...) })
 				}(data.val)
-				metricapi.Must(meter).RegisterInt64Observer(name, callback)
+				metricapi.Must(meter).NewInt64ValueObserver(name, callback)
 			case metricapi.Float64NumberKind:
 				callback := func(v float64) metricapi.Float64ObserverCallback {
-					return metricapi.Float64ObserverCallback(func(result metricapi.Float64ObserverResult) { result.Observe(v, labels...) })
+					return metricapi.Float64ObserverCallback(func(_ context.Context, result metricapi.Float64ObserverResult) { result.Observe(v, labels...) })
 				}(float64(data.val))
-				metricapi.Must(meter).RegisterFloat64Observer(name, callback)
+				metricapi.Must(meter).NewFloat64ValueObserver(name, callback)
 			default:
 				assert.Failf(t, "unsupported number testing kind", data.nKind.String())
 			}
@@ -249,7 +253,7 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 			default:
 				assert.Failf(t, "invalid number kind", data.nKind.String())
 			}
-		case metric.MeasureKind, metric.ObserverKind:
+		case metric.ValueRecorderKind, metric.ValueObserverKind:
 			assert.Equal(t, metricpb.MetricDescriptor_SUMMARY.String(), desc.GetType().String())
 			m.GetSummaryDataPoints()
 			if dp := m.GetSummaryDataPoints(); assert.Len(t, dp, 1) {

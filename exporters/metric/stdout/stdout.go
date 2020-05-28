@@ -25,13 +25,11 @@ import (
 
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/label"
-	"go.opentelemetry.io/otel/sdk/resource"
 
 	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
-	integrator "go.opentelemetry.io/otel/sdk/metric/integrator/simple"
 	"go.opentelemetry.io/otel/sdk/metric/selector/simple"
 )
 
@@ -54,8 +52,8 @@ type Config struct {
 	// useful to create deterministic test conditions.
 	DoNotPrintTime bool
 
-	// Quantiles are the desired aggregation quantiles for measure
-	// metric data, used when the configured aggregator supports
+	// Quantiles are the desired aggregation quantiles for distribution
+	// summaries, used when the configured aggregator supports
 	// quantiles.
 	//
 	// Note: this exporter is meant as a demonstration; a real
@@ -122,48 +120,55 @@ func NewRawExporter(config Config) (*Exporter, error) {
 // 	}
 // 	defer pipeline.Stop()
 // 	... Done
-func InstallNewPipeline(config Config, opts ...push.Option) (*push.Controller, error) {
-	controller, err := NewExportPipeline(config, time.Minute, opts...)
+func InstallNewPipeline(config Config, options ...push.Option) (*push.Controller, error) {
+	controller, err := NewExportPipeline(config, options...)
 	if err != nil {
 		return controller, err
 	}
-	global.SetMeterProvider(controller)
+	global.SetMeterProvider(controller.Provider())
 	return controller, err
 }
 
-// NewExportPipeline sets up a complete export pipeline with the recommended setup,
-// chaining a NewRawExporter into the recommended selectors and integrators.
-func NewExportPipeline(config Config, period time.Duration, opts ...push.Option) (*push.Controller, error) {
-	selector := simple.NewWithExactMeasure()
+// NewExportPipeline sets up a complete export pipeline with the
+// recommended setup, chaining a NewRawExporter into the recommended
+// selectors and integrators.
+//
+// The pipeline is configured with a stateful integrator unless the
+// push.WithStateful(false) option is used.
+func NewExportPipeline(config Config, options ...push.Option) (*push.Controller, error) {
 	exporter, err := NewRawExporter(config)
 	if err != nil {
 		return nil, err
 	}
-	integrator := integrator.New(selector, true)
 
 	// In this case we have a remote config service
 	// We don't need to have a default config, and we do need to start the ConfigNotifier
 	configNotifier := notifier.New(10*time.Second, nil, "FAKE_HOSTNAME")
 	configNotifier.Start()
 
-	pusher := push.New(integrator, exporter, configNotifier, opts...)
+	pusher := push.New(
+		simple.NewWithExactDistribution(),
+		exporter,
+		configNotifier,
+		append([]push.Option{push.WithStateful(true)}, options...)...,
+	)
 	pusher.Start()
 
 	return pusher, nil
 }
 
-func (e *Exporter) Export(_ context.Context, resource *resource.Resource, checkpointSet export.CheckpointSet) error {
+func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet) error {
 	var aggError error
 	var batch expoBatch
 	if !e.config.DoNotPrintTime {
 		ts := time.Now()
 		batch.Timestamp = &ts
 	}
-	encodedResource := resource.Encoded(e.config.LabelEncoder)
 	aggError = checkpointSet.ForEach(func(record export.Record) error {
 		desc := record.Descriptor()
 		agg := record.Aggregator()
 		kind := desc.NumberKind()
+		encodedResource := record.Resource().Encoded(e.config.LabelEncoder)
 
 		var expose expoLine
 
