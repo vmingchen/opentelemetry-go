@@ -15,6 +15,7 @@
 package dynamicconfig
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -23,44 +24,56 @@ import (
 	controllerTest "go.opentelemetry.io/otel/sdk/metric/controller/test"
 )
 
+// testLock is to prevent race conditions in test code
+// testVar is used to verify OnInitialConfig and OnUpdatedConfig are called
 type testWatcher struct {
-	testDummy int
+	testLock  sync.Mutex
+	testVar int
 }
 
 func (w *testWatcher) OnInitialConfig(config *MetricConfig) {
-	w.testDummy = 1
+	w.testLock.Lock()
+	defer w.testLock.Unlock()
+	w.testVar = 1
 }
 
 func (w *testWatcher) OnUpdatedConfig(config *MetricConfig) {
-	w.testDummy = 2
+	w.testLock.Lock()
+	defer w.testLock.Unlock()
+	w.testVar = 2
+}
+
+func (w *testWatcher) getTestVar() int {
+	w.testLock.Lock()
+	defer w.testLock.Unlock()
+	return w.testVar
 }
 
 // Test config updates
 func TestDynamicConfigNotifier(t *testing.T) {
-	t.Log("first\n")
 	watcher := testWatcher{
-		testDummy: 0,
+		testVar: 0,
 	}
 	mock := controllerTest.NewMockClock()
 
 	configNotifier := New(time.Minute, nil, "localhost:1234")
-	require.Equal(t, watcher.testDummy, 0)
+	require.Equal(t, watcher.getTestVar(), 0)
 	configNotifier.SetClock(mock)
 	configNotifier.Start()
 
 	configNotifier.Register(&watcher)
-	require.Equal(t, watcher.testDummy, 1)
+	require.Equal(t, watcher.getTestVar(), 1)
 
 	mock.Add(time.Minute)
 
-	require.Equal(t, watcher.testDummy, 2)
+	require.Equal(t, watcher.getTestVar(), 2)
 	configNotifier.Stop()
 }
 
 // Test config doesn't update
 func TestNonDynamicConfigNotifier(t *testing.T) {
 	watcher := testWatcher{
-		testDummy: 0,
+		testVar: 0,
 	}
 	mock := controllerTest.NewMockClock()
 	config := &MetricConfig{
@@ -68,16 +81,16 @@ func TestNonDynamicConfigNotifier(t *testing.T) {
 	}
 
 	configNotifier := New(time.Minute, config, "")
-	require.Equal(t, watcher.testDummy, 0)
+	require.Equal(t, watcher.getTestVar(), 0)
 	configNotifier.SetClock(mock)
 	configNotifier.Start()
 
 	configNotifier.Register(&watcher)
-	require.Equal(t, watcher.testDummy, 1)
+	require.Equal(t, watcher.getTestVar(), 1)
 
 	mock.Add(time.Minute)
 
-	require.Equal(t, watcher.testDummy, 1)
+	require.Equal(t, watcher.getTestVar(), 1)
 	configNotifier.Stop()
 }
 

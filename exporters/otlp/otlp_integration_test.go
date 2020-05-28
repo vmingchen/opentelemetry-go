@@ -117,7 +117,7 @@ func newExporterEndToEndTest(t *testing.T, additionalOpts []otlp.ExporterOption)
 
 	selector := simple.NewWithExactDistribution()
 	integrator := integrator.New(selector, true)
-	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Minute})
+	configNotifier := notifier.New(time.Minute, nil, "TEST_IP")
 	pusher := push.New(integrator, exp, configNotifier)
 	pusher.Start()
 
