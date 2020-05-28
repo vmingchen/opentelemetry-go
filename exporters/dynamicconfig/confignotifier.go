@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	controllerTime "go.opentelemetry.io/otel/sdk/metric/controller/time"
 )
 
 type MetricConfig struct {
@@ -37,10 +39,7 @@ func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
 	configString := fmt.Sprintf("%+v", *config)
 	otherConfigString := fmt.Sprintf("%+v", *otherConfig)
 
-	if configString == otherConfigString {
-		return true
-	}
-	return false
+	return configString == otherConfigString
 }
 
 // TODO: Read actual config from host
@@ -69,12 +68,15 @@ type ConfigWatcher interface {
 }
 
 type ConfigNotifier struct {
+	ch             chan struct{}
 	checkFrequency time.Duration
+	clock          controllerTime.Clock
 	config         *MetricConfig
-	configLock     sync.Mutex
 	configHost     string
+	lock           sync.Mutex
 	subscribed     map[ConfigWatcher]bool
-	subscribedLock sync.Mutex
+	ticker         controllerTime.Ticker
+	wg             sync.WaitGroup
 }
 
 // Constructor for a ConfigNotifier
@@ -86,7 +88,9 @@ func New(checkFrequency time.Duration, defaultConfig *MetricConfig, configHost s
 	}
 
 	configNotifier := &ConfigNotifier{
+		ch:             make(chan struct{}),
 		checkFrequency: checkFrequency,
+		clock:          controllerTime.RealClock{},
 		config:         config,
 		configHost:     configHost,
 		subscribed:     make(map[ConfigWatcher]bool),
@@ -95,45 +99,83 @@ func New(checkFrequency time.Duration, defaultConfig *MetricConfig, configHost s
 	return configNotifier
 }
 
-func (notifier *ConfigNotifier) Start() {
-	go notifier.checkChanges()
+// SetClock supports setting a mock clock for testing.  This must be
+// called before Start().
+func (n *ConfigNotifier) SetClock(clock controllerTime.Clock) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+	n.clock = clock
 }
 
-func (notifier *ConfigNotifier) Register(watcher ConfigWatcher) {
-	notifier.subscribedLock.Lock()
-	notifier.subscribed[watcher] = true
-	notifier.subscribedLock.Unlock()
+func (n *ConfigNotifier) Start() {
+	n.lock.Lock()
+	defer n.lock.Unlock()
 
-	notifier.configLock.Lock()
-	watcher.OnInitialConfig(notifier.config)
-	notifier.configLock.Unlock()
-}
-
-func (notifier *ConfigNotifier) Unregister(watcher ConfigWatcher) {
-	notifier.subscribedLock.Lock()
-	defer notifier.subscribedLock.Unlock()
-
-	delete(notifier.subscribed, watcher)
-}
-
-func (notifier *ConfigNotifier) checkChanges() {
-	if notifier.configHost == "" {
+	if n.configHost == "" {
 		return
 	}
 
+	if n.ticker != nil {
+		return
+	}
+
+	n.ticker = n.clock.Ticker(n.checkFrequency)
+	n.wg.Add(1)
+	go n.checkChanges(n.ch)
+}
+
+func (n *ConfigNotifier) Stop() {
+	n.lock.Lock()
+
+	if n.configHost == "" {
+		return
+	}
+
+	if n.ch == nil {
+		return
+	}
+	close(n.ch)
+	n.ch = nil
+
+	n.lock.Unlock()
+
+	n.wg.Wait()
+	n.ticker.Stop()
+}
+
+func (n *ConfigNotifier) Register(watcher ConfigWatcher) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	n.subscribed[watcher] = true
+	watcher.OnInitialConfig(n.config)
+}
+
+func (n *ConfigNotifier) Unregister(watcher ConfigWatcher) {
+	n.lock.Lock()
+	defer n.lock.Unlock()
+
+	delete(n.subscribed, watcher)
+}
+
+func (n *ConfigNotifier) checkChanges(ch chan struct{}) {
 	for {
-		time.Sleep(notifier.checkFrequency)
+		select {
+		case <-ch:
+			n.wg.Done()
+			return
+		case <-n.ticker.C():
+			newConfig := readConfig(n.configHost)
 
-		newConfig := readConfig(notifier.configHost)
+			n.lock.Lock()
+			if !n.config.equals(newConfig) {
+				n.config = newConfig
 
-		notifier.configLock.Lock()
-		if !notifier.config.equals(newConfig) {
-			notifier.config = newConfig
-
-			for watcher := range notifier.subscribed {
-				watcher.OnUpdatedConfig(newConfig)
+				for watcher := range n.subscribed {
+					watcher.OnUpdatedConfig(newConfig)
+				}
 			}
+			n.lock.Unlock()
 		}
-		notifier.configLock.Unlock()
 	}
 }
