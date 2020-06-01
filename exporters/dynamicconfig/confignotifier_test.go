@@ -27,8 +27,8 @@ import (
 // testLock is to prevent race conditions in test code
 // testVar is used to verify OnInitialConfig and OnUpdatedConfig are called
 type testWatcher struct {
-	testLock  sync.Mutex
-	testVar int
+	testLock sync.Mutex
+	testVar  int
 }
 
 func (w *testWatcher) OnInitialConfig(config *MetricConfig) {
