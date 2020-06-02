@@ -192,14 +192,16 @@ func (n *ConfigNotifier) checkChanges(ch chan struct{}) {
 				n.lock.Lock()
 				n.config = newConfig
 
-				// To prevent lock starvation, make a copy of the subscribers map, then update
-				subscribed_copy := make(map[ConfigWatcher]bool)
-				for watcher, v := range n.subscribed {
-					subscribed_copy[watcher] = v
+				// To prevent lock starvation, make a list of the subscribers, then update
+				subscribed_copy := make([]ConfigWatcher, len(n.subscribed))
+				i := 0
+				for watcher := range n.subscribed {
+					subscribed_copy[i] = watcher
+					i++
 				}
 				n.lock.Unlock()
 
-				for watcher := range subscribed_copy {
+				for _, watcher := range subscribed_copy {
 					watcher.OnUpdatedConfig(newConfig)
 				}
 			}
