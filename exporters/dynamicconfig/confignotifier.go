@@ -69,24 +69,31 @@ type ConfigWatcher interface {
 
 // A ConfigNotifier monitors a config service for a config changing
 // It then lets all it's subscribers know if the config has changed
-//
-// ch is used to shut down the config checking routine when we stop ConfigNotifier
-// checkFrequency is how often we check to see if the config service has changed
-// clock is added for testing time-related functionality
-// config is the current config
-// configHost is the IP address of the config service. Can be set to ""
-// subscribed is a map of all configNotifier's current subscribers
-// ticker controls when we check the config service for a new config
-// wg is used to wait for the config-checking routine to return before stopping
 type ConfigNotifier struct {
+	// Used to shut down the config checking routine when we stop ConfigNotifier
 	ch             chan struct{}
+
+	// How often we check to see if the config service has changed	
 	checkFrequency time.Duration
+
+	// Added for testing time-related functionality
 	clock          controllerTime.Clock
+
+	// Current config
 	config         *MetricConfig
+
+	// IP address of the config service. Can be set to "" if config is non-dynamic
 	configHost     string
+
 	lock           sync.Mutex
+
+	// Contains all the notifier's subscribers
 	subscribed     map[ConfigWatcher]bool
+
+	// Controls when we check the config service for a new config
 	ticker         controllerTime.Ticker
+
+	// Used to wait for the config checking routine to return when we stop the notifier
 	wg             sync.WaitGroup
 }
 
@@ -157,9 +164,12 @@ func (n *ConfigNotifier) Stop() {
 func (n *ConfigNotifier) Register(watcher ConfigWatcher) {
 	n.lock.Lock()
 	n.subscribed[watcher] = true
+
+	// Avoid lock starvation with OnInitialConfig by making a copy of the config
+	config_copy := *n.config
 	n.lock.Unlock()
 
-	watcher.OnInitialConfig(n.config)
+	watcher.OnInitialConfig(&config_copy)
 }
 
 func (n *ConfigNotifier) Unregister(watcher ConfigWatcher) {
@@ -182,16 +192,14 @@ func (n *ConfigNotifier) checkChanges(ch chan struct{}) {
 				n.lock.Lock()
 				n.config = newConfig
 
-				// To prevent lock starvation, we will copy the list of subscribers, then update
-				subscribed_copy := make([]ConfigWatcher, len(n.subscribed))
-				i := 0
-				for watcher := range n.subscribed {
-					subscribed_copy[i] = watcher
-					i++
+				// To prevent lock starvation, make a copy of the subscribers map, then update
+				subscribed_copy := make(map[ConfigWatcher]bool)
+				for watcher, v := range n.subscribed {
+					subscribed_copy[watcher] = v
 				}
 				n.lock.Unlock()
 
-				for watcher := range n.subscribed {
+				for watcher := range subscribed_copy {
 					watcher.OnUpdatedConfig(newConfig)
 				}
 			}
