@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dynamicconfig
+package dynamicconfig_test
 
 import (
 	"sync"
@@ -21,6 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	controllerTest "go.opentelemetry.io/otel/sdk/metric/controller/test"
 )
 
@@ -31,22 +32,31 @@ type testWatcher struct {
 	testVar  int
 }
 
-func (w *testWatcher) OnInitialConfig(config *MetricConfig) {
+func (w *testWatcher) OnInitialConfig(config *notifier.MetricConfig) {
 	w.testLock.Lock()
 	defer w.testLock.Unlock()
 	w.testVar = 1
 }
 
-func (w *testWatcher) OnUpdatedConfig(config *MetricConfig) {
+func (w *testWatcher) OnUpdatedConfig(config *notifier.MetricConfig) {
 	w.testLock.Lock()
 	defer w.testLock.Unlock()
 	w.testVar = 2
 }
 
+// Use a getter to prevent race conditions around testVar
 func (w *testWatcher) getTestVar() int {
 	w.testLock.Lock()
 	defer w.testLock.Unlock()
 	return w.testVar
+}
+
+func newExampleNotifier() *notifier.ConfigNotifier {
+	return notifier.New(
+		time.Minute,
+		&notifier.MetricConfig{Period: time.Minute},
+		notifier.WithConfigHost("localhost:1234"),
+	)
 }
 
 // Test config updates
@@ -56,8 +66,9 @@ func TestDynamicConfigNotifier(t *testing.T) {
 	}
 	mock := controllerTest.NewMockClock()
 
-	configNotifier := New(time.Minute, nil, "localhost:1234")
+	configNotifier := newExampleNotifier()
 	require.Equal(t, watcher.getTestVar(), 0)
+
 	configNotifier.SetClock(mock)
 	configNotifier.Start()
 
@@ -76,12 +87,12 @@ func TestNonDynamicConfigNotifier(t *testing.T) {
 		testVar: 0,
 	}
 	mock := controllerTest.NewMockClock()
-	config := &MetricConfig{
-		Period: time.Minute,
-	}
-
-	configNotifier := New(time.Minute, config, "")
+	configNotifier := notifier.New(
+		time.Minute,
+		&notifier.MetricConfig{Period: time.Minute},
+	)
 	require.Equal(t, watcher.getTestVar(), 0)
+
 	configNotifier.SetClock(mock)
 	configNotifier.Start()
 
@@ -95,14 +106,14 @@ func TestNonDynamicConfigNotifier(t *testing.T) {
 }
 
 func TestDoubleStop(t *testing.T) {
-	configNotifier := New(time.Minute, nil, "localhost:1234")
+	configNotifier := newExampleNotifier()
 	configNotifier.Start()
 	configNotifier.Stop()
 	configNotifier.Stop()
 }
 
 func TestPushDoubleStart(t *testing.T) {
-	configNotifier := New(time.Minute, nil, "localhost:1234")
+	configNotifier := newExampleNotifier()
 	configNotifier.Start()
 	configNotifier.Start()
 	configNotifier.Stop()

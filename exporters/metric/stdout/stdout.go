@@ -63,6 +63,17 @@ type Config struct {
 
 	// LabelEncoder encodes the labels
 	LabelEncoder label.Encoder
+
+	// A default config with metric schedules
+	// Must be set to use a remote config service
+	// If set, we will use it as a default
+	// If not set, all metrics will be pushed at the same time according
+	// to a period
+	DefaultConfig *notifier.MetricConfig
+
+	// ConfigHost is the IP address of a remote config service
+	// If set, it will be read from so as to dynamically configure the sdk
+	ConfigHost string
 }
 
 type expoBatch struct {
@@ -141,16 +152,22 @@ func NewExportPipeline(config Config, options ...push.Option) (*push.Controller,
 		return nil, err
 	}
 
-	// In this case we have a remote config service
-	// We don't need to have a default config, and we do need to start the ConfigNotifier
-	configNotifier := notifier.New(10*time.Second, nil, "FAKE_HOSTNAME")
-	configNotifier.Start()
+	var configNotifier *notifier.ConfigNotifier = nil
+	if config.DefaultConfig != nil {
+		configNotifier = notifier.New(
+			10*time.Second,
+			config.DefaultConfig,
+			notifier.WithConfigHost(config.ConfigHost),
+		)
+		configNotifier.Start()
+	}
 
 	pusher := push.New(
 		simple.NewWithExactDistribution(),
 		exporter,
-		configNotifier,
-		append([]push.Option{push.WithStateful(true)}, options...)...,
+		append(
+			[]push.Option{push.WithStateful(true), push.WithConfigNotifier(configNotifier)},
+			options...)...,
 	)
 	pusher.Start()
 

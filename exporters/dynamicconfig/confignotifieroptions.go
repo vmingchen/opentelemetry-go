@@ -12,30 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package dynamicconfig
 
-import (
-	"log"
-	"time"
-
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
-	metricstdout "go.opentelemetry.io/otel/exporters/metric/stdout"
-	"go.opentelemetry.io/otel/sdk/metric/controller/push"
-)
-
-func initMeter() *push.Controller {
-	pusher, err := metricstdout.InstallNewPipeline(metricstdout.Config{
-		DefaultConfig: &notifier.MetricConfig{Period: time.Minute},
-		ConfigHost:    "FAKE_HOSTNAME",
-	})
-	if err != nil {
-		log.Panicf("failed to initialize metric stdout exporter %v", err)
-	}
-	return pusher
+// Option is the interface that applies the value to a configuration option.
+type Option interface {
+	// Apply sets the Option value of a Config.
+	Apply(*ConfigNotifier)
 }
 
-func main() {
-	defer initMeter().Stop()
+// WithConfigHost sets the ConfigHost configuration option of a Config.
+func WithConfigHost(host string) Option {
+	return configHostOption(host)
+}
 
-	time.Sleep(5 * time.Minute)
+type configHostOption string
+
+func (o configHostOption) Apply(notifier *ConfigNotifier) {
+	notifier.configHost = string(o)
 }

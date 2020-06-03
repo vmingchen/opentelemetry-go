@@ -61,7 +61,7 @@ func newFixture(t *testing.T) testFixture {
 	exporter := &testExporter{
 		t: t,
 	}
-	configNotifier := notifier.New(time.Minute, nil, "TEST_IP")
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Minute})
 	return testFixture{
 		checkpointSet:  checkpointSet,
 		exporter:       exporter,
@@ -103,7 +103,7 @@ func (e *testExporter) resetRecords() ([]export.Record, int) {
 
 func TestPushDoubleStop(t *testing.T) {
 	fix := newFixture(t)
-	p := push.New(testSelector{}, fix.exporter, fix.configNotifier)
+	p := push.New(testSelector{}, fix.exporter)
 	p.Start()
 	p.Stop()
 	p.Stop()
@@ -111,7 +111,7 @@ func TestPushDoubleStop(t *testing.T) {
 
 func TestPushDoubleStart(t *testing.T) {
 	fix := newFixture(t)
-	p := push.New(testSelector{}, fix.exporter, fix.configNotifier)
+	p := push.New(testSelector{}, fix.exporter)
 	p.Start()
 	p.Start()
 	p.Stop()
@@ -123,9 +123,9 @@ func TestPushTicker(t *testing.T) {
 	p := push.New(
 		testSelector{},
 		fix.exporter,
-		fix.configNotifier,
-		push.WithPeriod(time.Second),
+		push.WithPeriod(time.Minute),
 		push.WithResource(testResource),
+		push.WithConfigNotifier(fix.configNotifier),
 	)
 	meter := p.Provider().Meter("name")
 
@@ -144,7 +144,7 @@ func TestPushTicker(t *testing.T) {
 	require.Equal(t, 0, exports)
 	require.Equal(t, 0, len(records))
 
-	mock.Add(time.Second)
+	mock.Add(time.Minute)
 	runtime.Gosched()
 
 	records, exports = fix.exporter.resetRecords()
@@ -161,7 +161,7 @@ func TestPushTicker(t *testing.T) {
 
 	counter.Add(ctx, 7)
 
-	mock.Add(time.Second)
+	mock.Add(time.Minute)
 	runtime.Gosched()
 
 	records, exports = fix.exporter.resetRecords()
@@ -205,9 +205,9 @@ func TestPushExportError(t *testing.T) {
 			p := push.New(
 				testSelector{},
 				fix.exporter,
-				fix.configNotifier,
-				push.WithPeriod(time.Second),
+				push.WithPeriod(time.Minute),
 				push.WithResource(testResource),
+				push.WithConfigNotifier(fix.configNotifier),
 			)
 
 			var err error
@@ -236,7 +236,7 @@ func TestPushExportError(t *testing.T) {
 			require.Equal(t, 0, fix.exporter.exports)
 			require.Nil(t, err)
 
-			mock.Add(time.Second)
+			mock.Add(time.Minute)
 			runtime.Gosched()
 
 			records, exports := fix.exporter.resetRecords()

@@ -71,50 +71,47 @@ type ConfigWatcher interface {
 // It then lets all it's subscribers know if the config has changed
 type ConfigNotifier struct {
 	// Used to shut down the config checking routine when we stop ConfigNotifier
-	ch             chan struct{}
+	ch chan struct{}
 
-	// How often we check to see if the config service has changed	
+	// How often we check to see if the config service has changed
 	checkFrequency time.Duration
 
 	// Added for testing time-related functionality
-	clock          controllerTime.Clock
+	clock controllerTime.Clock
 
 	// Current config
-	config         *MetricConfig
+	config *MetricConfig
 
-	// IP address of the config service. Can be set to "" if config is non-dynamic
-	configHost     string
+	// Optional if config is non-dynamic. Address of config service host
+	configHost string
 
-	lock           sync.Mutex
+	lock sync.Mutex
 
 	// Contains all the notifier's subscribers
-	subscribed     map[ConfigWatcher]bool
+	subscribed map[ConfigWatcher]bool
 
 	// Controls when we check the config service for a new config
-	ticker         controllerTime.Ticker
+	ticker controllerTime.Ticker
 
 	// Used to wait for the config checking routine to return when we stop the notifier
-	wg             sync.WaitGroup
+	wg sync.WaitGroup
 }
 
 // Constructor for a ConfigNotifier
-// Set configHost to "" if the config is not dynamic and there is no remote config service
-func New(checkFrequency time.Duration, defaultConfig *MetricConfig, configHost string) *ConfigNotifier {
-	config := defaultConfig
-	if configHost != "" {
-		config = readConfig(configHost)
-	}
-
-	configNotifier := &ConfigNotifier{
+func New(checkFrequency time.Duration, defaultConfig *MetricConfig, opts ...Option) *ConfigNotifier {
+	notifier := &ConfigNotifier{
 		ch:             make(chan struct{}),
 		checkFrequency: checkFrequency,
 		clock:          controllerTime.RealClock{},
-		config:         config,
-		configHost:     configHost,
+		config:         defaultConfig,
 		subscribed:     make(map[ConfigWatcher]bool),
 	}
 
-	return configNotifier
+	for _, opt := range opts {
+		opt.Apply(notifier)
+	}
+
+	return notifier
 }
 
 // SetClock supports setting a mock clock for testing.  This must be

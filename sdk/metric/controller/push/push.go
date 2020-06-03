@@ -51,8 +51,7 @@ type Controller struct {
 // New constructs a Controller, an implementation of metric.Provider,
 // using the provided exporter and options to configure an SDK with
 // periodic collection.
-func New(selector export.AggregationSelector, exporter export.Exporter, configNotifier *notifier.ConfigNotifier,
-	opts ...Option) *Controller {
+func New(selector export.AggregationSelector, exporter export.Exporter, opts ...Option) *Controller {
 	c := &Config{
 		ErrorHandler: sdk.DefaultErrorHandler,
 		Period:       DefaultPushPeriod,
@@ -80,7 +79,7 @@ func New(selector export.AggregationSelector, exporter export.Exporter, configNo
 		period:         c.Period,
 		timeout:        c.Timeout,
 		clock:          controllerTime.RealClock{},
-		configNotifier: configNotifier,
+		configNotifier: c.ConfigNotifier,
 	}
 }
 
@@ -116,9 +115,12 @@ func (c *Controller) Start() {
 		return
 	}
 
+	if c.configNotifier != nil {
+		c.configNotifier.Register(c)
+	}
+
 	c.ticker = c.clock.Ticker(c.period)
 	c.wg.Add(1)
-	c.configNotifier.Register(c)
 	go c.run(c.ch)
 }
 
@@ -137,9 +139,12 @@ func (c *Controller) Stop() {
 	c.wg.Wait()
 	c.ticker.Stop()
 	c.ticker = nil
-	c.configNotifier.Unregister(c)
 
 	c.tick()
+
+	if c.configNotifier != nil {
+		c.configNotifier.Unregister(c)
+	}
 }
 
 func (c *Controller) OnInitialConfig(config *notifier.MetricConfig) {
