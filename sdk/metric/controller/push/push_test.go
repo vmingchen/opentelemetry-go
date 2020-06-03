@@ -61,7 +61,7 @@ func newFixture(t *testing.T) testFixture {
 	exporter := &testExporter{
 		t: t,
 	}
-	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Minute})
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Second})
 	return testFixture{
 		checkpointSet:  checkpointSet,
 		exporter:       exporter,
@@ -123,7 +123,7 @@ func TestPushTicker(t *testing.T) {
 	p := push.New(
 		testSelector{},
 		fix.exporter,
-		push.WithPeriod(time.Minute),
+		push.WithPeriod(time.Second),
 		push.WithResource(testResource),
 		push.WithConfigNotifier(fix.configNotifier),
 	)
@@ -144,7 +144,7 @@ func TestPushTicker(t *testing.T) {
 	require.Equal(t, 0, exports)
 	require.Equal(t, 0, len(records))
 
-	mock.Add(time.Minute)
+	mock.Add(time.Second)
 	runtime.Gosched()
 
 	records, exports = fix.exporter.resetRecords()
@@ -161,7 +161,7 @@ func TestPushTicker(t *testing.T) {
 
 	counter.Add(ctx, 7)
 
-	mock.Add(time.Minute)
+	mock.Add(time.Second)
 	runtime.Gosched()
 
 	records, exports = fix.exporter.resetRecords()
@@ -205,7 +205,7 @@ func TestPushExportError(t *testing.T) {
 			p := push.New(
 				testSelector{},
 				fix.exporter,
-				push.WithPeriod(time.Minute),
+				push.WithPeriod(time.Second),
 				push.WithResource(testResource),
 				push.WithConfigNotifier(fix.configNotifier),
 			)
@@ -236,7 +236,7 @@ func TestPushExportError(t *testing.T) {
 			require.Equal(t, 0, fix.exporter.exports)
 			require.Nil(t, err)
 
-			mock.Add(time.Minute)
+			mock.Add(time.Second)
 			runtime.Gosched()
 
 			records, exports := fix.exporter.resetRecords()
