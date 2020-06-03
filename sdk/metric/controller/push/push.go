@@ -40,7 +40,7 @@ type Controller struct {
 	integrator  *simple.Integrator
 	exporter    export.Exporter
 	wg          sync.WaitGroup
-	ch          chan struct{}
+	ch          chan bool
 	period      time.Duration
 	timeout     time.Duration
 	clock       controllerTime.Clock
@@ -72,7 +72,7 @@ func New(selector export.AggregationSelector, exporter export.Exporter, opts ...
 		accumulator: impl,
 		integrator:  integrator,
 		exporter:    exporter,
-		ch:          make(chan struct{}),
+		ch:          make(chan bool),
 		period:      c.Period,
 		timeout:     c.Timeout,
 		clock:       controllerTime.RealClock{},
