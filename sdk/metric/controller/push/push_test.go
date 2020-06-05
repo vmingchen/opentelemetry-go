@@ -75,9 +75,9 @@ type testExporter struct {
 }
 
 type testFixture struct {
-	checkpointSet  *test.CheckpointSet
-	exporter       *testExporter
-	notifier *dynamicconfig.Notifier
+	checkpointSet *test.CheckpointSet
+	exporter      *testExporter
+	notifier      *dynamicconfig.Notifier
 }
 
 type testSelector struct{}
@@ -90,9 +90,9 @@ func newFixture(t *testing.T) testFixture {
 	}
 	notifier := dynamicconfig.NewNotifier(time.Minute, dynamicconfig.GetDefaultConfig(60))
 	return testFixture{
-		checkpointSet:  checkpointSet,
-		exporter:       exporter,
-		notifier: notifier,
+		checkpointSet: checkpointSet,
+		exporter:      exporter,
+		notifier:      notifier,
 	}
 }
 

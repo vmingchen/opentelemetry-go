@@ -32,13 +32,13 @@ type testWatcher struct {
 	testVar  int
 }
 
-func (w *testWatcher) OnInitialConfig(config *dynamicConfig.Config) {
+func (w *testWatcher) OnInitialConfig(config *dynamicconfig.Config) {
 	w.testLock.Lock()
 	defer w.testLock.Unlock()
 	w.testVar = 1
 }
 
-func (w *testWatcher) OnUpdatedConfig(config *dynamicConfig.Config) {
+func (w *testWatcher) OnUpdatedConfig(config *dynamicconfig.Config) {
 	w.testLock.Lock()
 	defer w.testLock.Unlock()
 	w.testVar = 2
@@ -55,14 +55,14 @@ func newExampleNotifier() *dynamicconfig.Notifier {
 	return dynamicconfig.NewNotifier(
 		time.Minute,
 		dynamicconfig.GetDefaultConfig(60),
-		notifier.WithConfigHost("localhost:1234"),
+		dynamicconfig.WithConfigHost("localhost:1234"),
 	)
 }
 
 //TODO: Put tests back when you figure out how to mock stuff
 
 // // Test config updates
-// func TestDynamicConfigNotifier(t *testing.T) {
+// func TestDynamicNotifier(t *testing.T) {
 // 	watcher := testWatcher{
 // 		testVar: 0,
 // 	}
@@ -71,52 +71,52 @@ func newExampleNotifier() *dynamicconfig.Notifier {
 // 	notifier := newExampleNotifier()
 // 	require.Equal(t, watcher.getTestVar(), 0)
 
-// 	configNotifier.SetClock(mock)
-// 	configNotifier.Start()
+// 	notifier.SetClock(mock)
+// 	notifier.Start()
 
-// 	configNotifier.Register(&watcher)
+// 	notifier.Register(&watcher)
 // 	require.Equal(t, watcher.getTestVar(), 1)
 
 // 	mock.Add(time.Minute)
 
 // 	require.Equal(t, watcher.getTestVar(), 2)
-// 	configNotifier.Stop()
+// 	notifier.Stop()
 // }
 
 // Test config doesn't update
-func TestNonDynamicConfigNotifier(t *testing.T) {
+func TestNonDynamicNotifier(t *testing.T) {
 	watcher := testWatcher{
 		testVar: 0,
 	}
 	mock := controllerTest.NewMockClock()
-	configNotifier := notifier.New(
+	notifier := dynamicconfig.NewNotifier(
 		time.Minute,
 		dynamicconfig.GetDefaultConfig(60),
 	)
 	require.Equal(t, watcher.getTestVar(), 0)
 
-	configNotifier.SetClock(mock)
-	configNotifier.Start()
+	notifier.SetClock(mock)
+	notifier.Start()
 
-	configNotifier.Register(&watcher)
+	notifier.Register(&watcher)
 	require.Equal(t, watcher.getTestVar(), 1)
 
 	mock.Add(time.Minute)
 
 	require.Equal(t, watcher.getTestVar(), 1)
-	configNotifier.Stop()
+	notifier.Stop()
 }
 
 // func TestDoubleStop(t *testing.T) {
-// 	configNotifier := newExampleNotifier()
-// 	configNotifier.Start()
-// 	configNotifier.Stop()
-// 	configNotifier.Stop()
+// 	notifier := newExampleNotifier()
+// 	notifier.Start()
+// 	notifier.Stop()
+// 	notifier.Stop()
 // }
 
 // func TestPushDoubleStart(t *testing.T) {
-// 	configNotifier := newExampleNotifier()
-// 	configNotifier.Start()
-// 	configNotifier.Start()
-// 	configNotifier.Stop()
+// 	notifier := newExampleNotifier()
+// 	notifier.Start()
+// 	notifier.Start()
+//  notifier.Stop()
 // }

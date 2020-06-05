@@ -18,14 +18,22 @@ import (
 	"log"
 	"time"
 
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/exporters/dynamicconfig"
 	metricstdout "go.opentelemetry.io/otel/exporters/metric/stdout"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
+	"go.opentelemetry.io/otel/sdk/resource"
+
+	"github.com/open-telemetry/opentelemetry-collector/translator/conventions"
 )
 
 func initMeter() *push.Controller {
 	pusher, err := metricstdout.InstallNewPipeline(metricstdout.Config{
-		DefaultConfig: dynamicconfig.GetDefaultConfig(5),
+		DefaultConfig: dynamicconfig.GetDefaultConfig(10),
+		ConfigHost:    "localhost:7777",
+		Resource: resource.New(
+			kv.Key(conventions.AttributeServiceName).String("dynamicconfigtest"),
+		),
 	})
 	if err != nil {
 		log.Panicf("failed to initialize metric stdout exporter %v", err)

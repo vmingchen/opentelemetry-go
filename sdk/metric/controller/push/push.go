@@ -45,7 +45,7 @@ type Controller struct {
 	timeout     time.Duration
 	clock       controllerTime.Clock
 	ticker      controllerTime.Ticker
-	notifier *dynamicconfig.Notifier
+	notifier    *dynamicconfig.Notifier
 }
 
 // New constructs a Controller, an implementation of metric.Provider,
@@ -76,7 +76,7 @@ func New(selector export.AggregationSelector, exporter export.Exporter, opts ...
 		period:      c.Period,
 		timeout:     c.Timeout,
 		clock:       controllerTime.RealClock{},
-		notifier: c.Notifier,
+		notifier:    c.Notifier,
 	}
 }
 
@@ -139,7 +139,7 @@ func (c *Controller) Stop() {
 // that includes all metrics
 // TODO: Change later to support metric schedules
 func (c *Controller) OnInitialConfig(config *dynamicconfig.Config) {
-	c.period = config.MetricConfig.CollectingSchedules[0].Period * time.Second
+	c.period = time.Duration(config.MetricConfig.CollectingSchedules[0].Period) * time.Second
 }
 
 // TODO: Change later to support metric schedules
@@ -150,7 +150,7 @@ func (c *Controller) OnUpdatedConfig(config *dynamicconfig.Config) {
 	// Stop the existing ticker
 	// Make a new ticker with the new sampling period
 	c.ticker.Stop()
-	c.period = config.MetricConfig.CollectingSchedules[0].Period * time.Second
+	c.period = time.Duration(config.MetricConfig.CollectingSchedules[0].Period) * time.Second
 	c.ticker = c.clock.Ticker(c.period)
 
 	// Let the controller know to check the new ticker

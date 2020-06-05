@@ -22,17 +22,17 @@ import (
 
 type Config struct {
 	MetricConfig *pb.ConfigResponse_MetricConfig
-	TraceConfig *pb.ConfigResponse_TraceConfig
+	TraceConfig  *pb.ConfigResponse_TraceConfig
 }
 
 // TODO: Either get rid of this or replace later
 // This is for convenient development/testing purposes
 func GetDefaultConfig(period pb.ConfigResponse_MetricConfig_Schedule_CollectionPeriod) *Config {
-	schedule := pb.ConfigResponse_MetricConfig_Schedule { Period: period }
+	schedule := pb.ConfigResponse_MetricConfig_Schedule{Period: period}
 
-	return &Config {
-		MetricConfig: &pb.ConfigResponse_MetricConfig {
-			CollectingSchedules: []*pb.ConfigResponse_MetricConfig_Schedule { &schedule },
+	return &Config{
+		MetricConfig: &pb.ConfigResponse_MetricConfig{
+			CollectingSchedules: []*pb.ConfigResponse_MetricConfig_Schedule{&schedule},
 		},
 	}
 }

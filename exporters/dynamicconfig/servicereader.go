@@ -23,7 +23,6 @@ import (
 
 	resourcepb "github.com/open-telemetry/opentelemetry-proto/gen/go/resource/v1"
 	pb "go.opentelemetry.io/otel/exporters/dynamicconfig/v1"
-	"go.opentelemetry.io/otel/sdk/resource"
 )
 
 type ServiceReader struct {
@@ -31,7 +30,7 @@ type ServiceReader struct {
 	configHost string
 
 	// Timestamp of last time config service was checked
-	lastTimestamp time.Time 
+	lastTimestamp time.Time
 
 	// Most recent config version
 	lastFingerprint string
@@ -46,11 +45,11 @@ type ServiceReader struct {
 	resource *resourcepb.Resource
 }
 
-func newServiceReader(configHost string, protoVersion int32, resource *v1.Resource) *ServiceReader {
-	return &ServiceReader {
-		configHost: configHost,
+func newServiceReader(configHost string, protoVersion int32, resource *resourcepb.Resource) *ServiceReader {
+	return &ServiceReader{
+		configHost:   configHost,
 		protoVersion: protoVersion,
-		resource: resource,
+		resource:     resource,
 	}
 }
 
@@ -73,10 +72,10 @@ func (r *ServiceReader) readConfig() (*Config, error) {
 
 	c := pb.NewDynamicConfigClient(conn)
 
-	request := pb.ConfigRequest {
+	request := &pb.ConfigRequest{
 		LastFingerprint: r.lastFingerprint,
-		ProtoVersion: r.protoVersion,
-		Resource: r.resource,
+		ProtoVersion:    r.protoVersion,
+		Resource:        r.resource,
 	}
 
 	md := metadata.Pairs("timestamp", time.Now().Format(time.StampNano))
@@ -87,12 +86,12 @@ func (r *ServiceReader) readConfig() (*Config, error) {
 		return nil, err
 	}
 
-	r.lastFingerprint = response.LastFingerprint
+	r.lastFingerprint = response.Fingerprint
 	r.lastTimestamp = time.Now()
 
-	newConfig := Config {
+	newConfig := Config{
 		MetricConfig: response.MetricConfig,
-		TraceConfig: response.TraceConfig,
+		TraceConfig:  response.TraceConfig,
 	}
 
 	return &newConfig, nil
