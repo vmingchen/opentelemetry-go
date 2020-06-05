@@ -14,19 +14,43 @@
 
 package dynamicconfig
 
+import "go.opentelemetry.io/otel/sdk/resource"
+
 // Option is the interface that applies the value to a configuration option.
 type Option interface {
 	// Apply sets the Option value of a Config.
-	Apply(*ConfigNotifier)
+	Apply(*Notifier)
 }
 
-// WithConfigHost sets the ConfigHost configuration option of a Config.
+// WithConfigHost sets the configHost configuration option of a Notifier.
 func WithConfigHost(host string) Option {
 	return configHostOption(host)
 }
 
 type configHostOption string
 
-func (o configHostOption) Apply(notifier *ConfigNotifier) {
+func (o configHostOption) Apply(notifier *Notifier) {
 	notifier.configHost = string(o)
+}
+
+// WithProtoVersion sets the protoVersion configuration option of a Notifier
+func WithProtoVersion(version int32) Option {
+	return protoVersionOption(version)
+}
+
+type protoVersionOption int32
+
+func (o protoVersionOption) Apply(notifier *Notifier) {
+	notifier.protoVersion = int32(o)
+}
+
+// WithResource sets the resource configuration option of a gNotifier
+func WithResource(r *resource.Resource) Option {
+	return resourceOption{r}
+}
+
+type resourceOption struct{ *resource.Resource }
+
+func (o resourceOption) Apply(notifier *Notifier) {
+	notifier.resource = o.Resource
 }

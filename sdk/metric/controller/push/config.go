@@ -17,7 +17,7 @@ package push
 import (
 	"time"
 
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
+	"go.opentelemetry.io/otel/exporters/dynamicconfig"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
@@ -40,9 +40,9 @@ type Config struct {
 	// the controller push period.
 	Timeout time.Duration
 
-	// ConfigNotifier supplies configurations for the push controller
+	// Notifier supplies configurations for the push controller
 	// from a remote config service
-	ConfigNotifier *notifier.ConfigNotifier
+	Notifier *dynamicconfig.Notifier
 }
 
 // Option is the interface that applies the value to a configuration option.
@@ -95,13 +95,13 @@ func (o timeoutOption) Apply(config *Config) {
 	config.Timeout = time.Duration(o)
 }
 
-// WithConfigNotifier sets the ConfigNotifier configuration option of a Config
-func WithConfigNotifier(notifier *notifier.ConfigNotifier) Option {
-	return configNotifierOption{notifier}
+// WithNotifier sets the Notifier configuration option of a Config
+func WithNotifier(notifier *dynamicconfig.Notifier) Option {
+	return notifierOption{notifier}
 }
 
-type configNotifierOption struct{ *notifier.ConfigNotifier }
+type notifierOption struct{ *dynamicconfig.Notifier }
 
-func (o configNotifierOption) Apply(config *Config) {
-	config.ConfigNotifier = o.ConfigNotifier
+func (o notifierOption) Apply(config *Config) {
+	config.Notifier = o.Notifier
 }

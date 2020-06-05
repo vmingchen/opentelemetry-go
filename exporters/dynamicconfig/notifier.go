@@ -15,62 +15,26 @@
 package dynamicconfig
 
 import (
-	"fmt"
+	"log"
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/exporters/otlp/transform"
 	controllerTime "go.opentelemetry.io/otel/sdk/metric/controller/time"
+	"go.opentelemetry.io/otel/sdk/resource"
 )
 
-type MetricConfig struct {
-	Period time.Duration
+const DEFAULT_PROTOCOL_VERSION int32 = 1
+
+type Watcher interface {
+	OnInitialConfig(config *Config)
+	OnUpdatedConfig(config *Config)
 }
 
-// TODO: Replace with something better when we have a solid config spec
-func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
-	if config == nil && otherConfig == nil {
-		return true
-	}
-
-	if config == nil || otherConfig == nil {
-		return false
-	}
-
-	configString := fmt.Sprintf("%+v", *config)
-	otherConfigString := fmt.Sprintf("%+v", *otherConfig)
-
-	return configString == otherConfigString
-}
-
-// TODO: Read actual config from host
-// We don't do anything with the configHost string right now
-// TIMES_READ_TEST is for testing purposes, to mimic a dynamic service
-// The second time we call readConfig, the sampling period changes
-var TIMES_CONFIG_READ_TEST = 0
-
-func readConfig(configHost string) *MetricConfig {
-	period := 10 * time.Second
-
-	if TIMES_CONFIG_READ_TEST > 0 {
-		period = 2 * time.Second
-	}
-
-	TIMES_CONFIG_READ_TEST++
-
-	return &MetricConfig{
-		Period: period,
-	}
-}
-
-type ConfigWatcher interface {
-	OnInitialConfig(config *MetricConfig)
-	OnUpdatedConfig(config *MetricConfig)
-}
-
-// A ConfigNotifier monitors a config service for a config changing
+// A Notifier monitors a config service for a config changing
 // It then lets all it's subscribers know if the config has changed
-type ConfigNotifier struct {
-	// Used to shut down the config checking routine when we stop ConfigNotifier
+type Notifier struct {
+	// Used to shut down the config checking routine when we stop Notifier
 	ch chan struct{}
 
 	// How often we check to see if the config service has changed
@@ -80,15 +44,22 @@ type ConfigNotifier struct {
 	clock controllerTime.Clock
 
 	// Current config
-	config *MetricConfig
+	config *Config
 
 	// Optional if config is non-dynamic. Address of config service host
 	configHost string
 
 	lock sync.Mutex
 
+	// Label to associate configs to individual instances
+	// Optional if config is non-dynamic. Must be set to read from config service
+	resource *resource.Resource
+
+	// Protocol version to check config service with
+	protoVersion int32
+
 	// Contains all the notifier's subscribers
-	subscribed map[ConfigWatcher]bool
+	subscribed map[Watcher]bool
 
 	// Controls when we check the config service for a new config
 	ticker controllerTime.Ticker
@@ -97,14 +68,14 @@ type ConfigNotifier struct {
 	wg sync.WaitGroup
 }
 
-// Constructor for a ConfigNotifier
-func New(checkFrequency time.Duration, defaultConfig *MetricConfig, opts ...Option) *ConfigNotifier {
-	notifier := &ConfigNotifier{
+// Constructor for a Notifier
+func NewNotifier(checkFrequency time.Duration, defaultConfig *Config, opts ...Option) *Notifier {
+	notifier := &Notifier{
 		ch:             make(chan struct{}),
 		checkFrequency: checkFrequency,
 		clock:          controllerTime.RealClock{},
 		config:         defaultConfig,
-		subscribed:     make(map[ConfigWatcher]bool),
+		subscribed:     make(map[Watcher]bool),
 	}
 
 	for _, opt := range opts {
@@ -116,13 +87,13 @@ func New(checkFrequency time.Duration, defaultConfig *MetricConfig, opts ...Opti
 
 // SetClock supports setting a mock clock for testing.  This must be
 // called before Start().
-func (n *ConfigNotifier) SetClock(clock controllerTime.Clock) {
+func (n *Notifier) SetClock(clock controllerTime.Clock) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 	n.clock = clock
 }
 
-func (n *ConfigNotifier) Start() {
+func (n *Notifier) Start() {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 
@@ -139,7 +110,7 @@ func (n *ConfigNotifier) Start() {
 	go n.checkChanges(n.ch)
 }
 
-func (n *ConfigNotifier) Stop() {
+func (n *Notifier) Stop() {
 	n.lock.Lock()
 
 	if n.configHost == "" {
@@ -158,7 +129,7 @@ func (n *ConfigNotifier) Stop() {
 	n.ticker.Stop()
 }
 
-func (n *ConfigNotifier) Register(watcher ConfigWatcher) {
+func (n *Notifier) Register(watcher Watcher) {
 	n.lock.Lock()
 	n.subscribed[watcher] = true
 
@@ -169,28 +140,43 @@ func (n *ConfigNotifier) Register(watcher ConfigWatcher) {
 	watcher.OnInitialConfig(&config_copy)
 }
 
-func (n *ConfigNotifier) Unregister(watcher ConfigWatcher) {
+func (n *Notifier) Unregister(watcher Watcher) {
 	n.lock.Lock()
 	defer n.lock.Unlock()
 
 	delete(n.subscribed, watcher)
 }
 
-func (n *ConfigNotifier) checkChanges(ch chan struct{}) {
+func (n *Notifier) checkChanges(ch chan struct{}) {
+	if n.resource == nil {
+		log.Fatalf("Missing Resource: required for reading from config service")
+	}
+
+	protoVersion := DEFAULT_PROTOCOL_VERSION
+	if n.protoVersion != 0 {
+		protoVersion = n.protoVersion
+	}
+
+	serviceReader := newServiceReader(n.configHost, protoVersion, transform.Resource(n.resource))
+
 	for {
 		select {
 		case <-ch:
 			n.wg.Done()
 			return
 		case <-n.ticker.C():
-			newConfig := readConfig(n.configHost)
+			newConfig, err := serviceReader.readConfig()
+			if err != nil {
+				log.Printf("Failed to read from config service: %v\n", err)
+				break
+			}
 
-			if !n.config.equals(newConfig) {
+			if !n.config.Equals(newConfig) {
 				n.lock.Lock()
 				n.config = newConfig
 
 				// To prevent lock starvation, make a list of the subscribers, then update
-				subscribed_copy := make([]ConfigWatcher, len(n.subscribed))
+				subscribed_copy := make([]Watcher, len(n.subscribed))
 				i := 0
 				for watcher := range n.subscribed {
 					subscribed_copy[i] = watcher

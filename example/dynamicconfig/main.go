@@ -18,15 +18,14 @@ import (
 	"log"
 	"time"
 
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
+	"go.opentelemetry.io/otel/exporters/dynamicconfig"
 	metricstdout "go.opentelemetry.io/otel/exporters/metric/stdout"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
 )
 
 func initMeter() *push.Controller {
 	pusher, err := metricstdout.InstallNewPipeline(metricstdout.Config{
-		DefaultConfig: &notifier.MetricConfig{Period: time.Minute},
-		ConfigHost:    "FAKE_HOSTNAME",
+		DefaultConfig: dynamicconfig.GetDefaultConfig(5),
 	})
 	if err != nil {
 		log.Panicf("failed to initialize metric stdout exporter %v", err)

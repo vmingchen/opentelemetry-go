@@ -26,11 +26,12 @@ import (
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/label"
 
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
+	"go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
 	"go.opentelemetry.io/otel/sdk/metric/selector/simple"
+	"go.opentelemetry.io/otel/sdk/resource"
 )
 
 type Exporter struct {
@@ -64,16 +65,18 @@ type Config struct {
 	// LabelEncoder encodes the labels
 	LabelEncoder label.Encoder
 
-	// A default config with metric schedules
+	// A default config for metrics and tracing
 	// Must be set to use a remote config service
 	// If set, we will use it as a default
-	// If not set, all metrics will be pushed at the same time according
-	// to a period
-	DefaultConfig *notifier.MetricConfig
+	// If not set, all metrics will be pushed at the same time
+	DefaultConfig *dynamicconfig.Config
 
 	// ConfigHost is the IP address of a remote config service
 	// If set, it will be read from so as to dynamically configure the sdk
 	ConfigHost string
+
+	// Resource associated with this exporter
+	Resource *resource.Resource
 }
 
 type expoBatch struct {
@@ -152,21 +155,22 @@ func NewExportPipeline(config Config, options ...push.Option) (*push.Controller,
 		return nil, err
 	}
 
-	var configNotifier *notifier.ConfigNotifier = nil
+	var notifier *dynamicconfig.Notifier = nil
 	if config.DefaultConfig != nil {
-		configNotifier = notifier.New(
+		notifier = dynamicconfig.NewNotifier(
 			10*time.Second,
 			config.DefaultConfig,
-			notifier.WithConfigHost(config.ConfigHost),
+			dynamicconfig.WithConfigHost(config.ConfigHost),
+			dynamicconfig.WithResource(config.Resource),
 		)
-		configNotifier.Start()
+		notifier.Start()
 	}
 
 	pusher := push.New(
 		simple.NewWithExactDistribution(),
 		exporter,
 		append(
-			[]push.Option{push.WithStateful(true), push.WithConfigNotifier(configNotifier)},
+			[]push.Option{push.WithStateful(true), push.WithNotifier(notifier)},
 			options...)...,
 	)
 	pusher.Start()

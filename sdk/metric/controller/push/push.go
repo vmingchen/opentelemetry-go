@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/api/metric/registry"
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
+	"go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	sdk "go.opentelemetry.io/otel/sdk/metric"
 	controllerTime "go.opentelemetry.io/otel/sdk/metric/controller/time"
@@ -45,7 +45,7 @@ type Controller struct {
 	timeout     time.Duration
 	clock       controllerTime.Clock
 	ticker      controllerTime.Ticker
-	configNotifier *notifier.ConfigNotifier
+	notifier *dynamicconfig.Notifier
 }
 
 // New constructs a Controller, an implementation of metric.Provider,
@@ -76,7 +76,7 @@ func New(selector export.AggregationSelector, exporter export.Exporter, opts ...
 		period:      c.Period,
 		timeout:     c.Timeout,
 		clock:       controllerTime.RealClock{},
-		configNotifier: c.ConfigNotifier,
+		notifier: c.Notifier,
 	}
 }
 
@@ -103,8 +103,8 @@ func (c *Controller) Start() {
 		return
 	}
 
-	if c.configNotifier != nil {
-		c.configNotifier.Register(c)
+	if c.notifier != nil {
+		c.notifier.Register(c)
 	}
 
 	c.ticker = c.clock.Ticker(c.period)
@@ -130,24 +130,28 @@ func (c *Controller) Stop() {
 
 	c.tick()
 
-	if c.configNotifier != nil {
-		c.configNotifier.Unregister(c)
+	if c.notifier != nil {
+		c.notifier.Unregister(c)
 	}
 }
 
-func (c *Controller) OnInitialConfig(config *notifier.MetricConfig) {
-	c.period = config.Period
+// We assume that the only metric schedule is one with an inclusion pattern
+// that includes all metrics
+// TODO: Change later to support metric schedules
+func (c *Controller) OnInitialConfig(config *dynamicconfig.Config) {
+	c.period = config.MetricConfig.CollectingSchedules[0].Period * time.Second
 }
 
-func (c *Controller) OnUpdatedConfig(config *notifier.MetricConfig) {
+// TODO: Change later to support metric schedules
+func (c *Controller) OnUpdatedConfig(config *dynamicconfig.Config) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	// Stop the existing ticker
 	// Make a new ticker with the new sampling period
 	c.ticker.Stop()
-	c.period = config.Period
-	c.ticker = c.clock.Ticker(config.Period)
+	c.period = config.MetricConfig.CollectingSchedules[0].Period * time.Second
+	c.ticker = c.clock.Ticker(c.period)
 
 	// Let the controller know to check the new ticker
 	c.ch <- true
