@@ -8,11 +8,11 @@ After about 10 seconds, you'll see metrics get outputted to stdout once every se
 ### Run server
 
 ```sh
-go run server.go
+go run ./server
 ```
 
 ### Run sdk
 
 ```sh
-go run main.go
+go run ./
 ```

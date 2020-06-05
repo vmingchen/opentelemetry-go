@@ -9,7 +9,7 @@ replace go.opentelemetry.io/otel/exporters/dynamicconfig => ../../exporters/dyna
 replace go.opentelemetry.io/otel/exporters/otlp => ../../exporters/otlp
 
 require (
-	github.com/open-telemetry/opentelemetry-collector v0.3.0 // indirect
+	github.com/open-telemetry/opentelemetry-collector v0.3.0
 	go.opentelemetry.io/otel v0.6.0
 	go.opentelemetry.io/otel/exporters/dynamicconfig v0.6.0
 	go.opentelemetry.io/otel/exporters/otlp v0.6.0
