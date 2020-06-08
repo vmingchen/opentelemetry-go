@@ -26,7 +26,7 @@ type MetricConfig struct {
 	Period time.Duration
 }
 
-// TODO: Replace with something better when we have a solid config spec
+// TODO: Replace with something better when we have a solid config spec.
 func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
 	if config == nil && otherConfig == nil {
 		return true
@@ -42,10 +42,10 @@ func (config *MetricConfig) equals(otherConfig *MetricConfig) bool {
 	return configString == otherConfigString
 }
 
-// TODO: Read actual config from host
-// We don't do anything with the configHost string right now
-// TIMES_READ_TEST is for testing purposes, to mimic a dynamic service
-// The second time we call readConfig, the sampling period changes
+// TODO: Read the actual config from host.
+// We don't do anything with the configHost string right now. TIMES_READ_TEST
+// is for testing purposes, so the second time we call readConfig, the
+// sampling period changes. This is to mimic a dynamic config service.
 var TIMES_CONFIG_READ_TEST = 0
 
 func readConfig(configHost string) *MetricConfig {
@@ -63,37 +63,44 @@ func readConfig(configHost string) *MetricConfig {
 }
 
 type ConfigWatcher interface {
+	// NOTE: A lock will be held during the execution of both these functions.
+	// Please ensure their implementation is not too slow so as to avoid lock-
+	// starvation.
 	OnInitialConfig(config *MetricConfig)
 	OnUpdatedConfig(config *MetricConfig)
 }
 
-// A ConfigNotifier monitors a config service for a config changing
-// It then lets all it's subscribers know if the config has changed
+// A ConfigNotifier monitors a config service for a config changing, then letting
+// all its subscribers know if the config has changed.
 type ConfigNotifier struct {
-	// Used to shut down the config checking routine when we stop ConfigNotifier
+	// Used to shut down the config checking routine when we stop ConfigNotifier.
 	ch chan struct{}
 
-	// How often we check to see if the config service has changed
+	// How often we check to see if the config service has changed.
 	checkFrequency time.Duration
 
-	// Added for testing time-related functionality
+	// Added for testing time-related functionality.
 	clock controllerTime.Clock
 
-	// Current config
+	// The current config we used as a default if we cannot read from the remote
+	// configuration service.
 	config *MetricConfig
 
-	// Optional if config is non-dynamic. Address of config service host
+	// Optional field for the address of the config service host if the config is
+	// non-dynamic.
 	configHost string
 
 	lock sync.Mutex
 
-	// Contains all the notifier's subscribers
+	// Set of all the notifier's subscribers.
 	subscribed map[ConfigWatcher]bool
 
-	// Controls when we check the config service for a new config
+	// Controls when we check the config service for a potential new config. It is
+	// set to nil if configHost is empty.
 	ticker controllerTime.Ticker
 
-	// Used to wait for the config checking routine to return when we stop the notifier
+	// This is used to wait for the config checking routine to return when we stop
+	// the notifier.
 	wg sync.WaitGroup
 }
 
@@ -160,13 +167,9 @@ func (n *ConfigNotifier) Stop() {
 
 func (n *ConfigNotifier) Register(watcher ConfigWatcher) {
 	n.lock.Lock()
+	defer n.lock.Unlock()
 	n.subscribed[watcher] = true
-
-	// Avoid lock starvation with OnInitialConfig by making a copy of the config
-	config_copy := *n.config
-	n.lock.Unlock()
-
-	watcher.OnInitialConfig(&config_copy)
+	watcher.OnInitialConfig(n.config)
 }
 
 func (n *ConfigNotifier) Unregister(watcher ConfigWatcher) {
@@ -185,23 +188,15 @@ func (n *ConfigNotifier) checkChanges(ch chan struct{}) {
 		case <-n.ticker.C():
 			newConfig := readConfig(n.configHost)
 
+			n.lock.Lock()
 			if !n.config.equals(newConfig) {
-				n.lock.Lock()
 				n.config = newConfig
 
-				// To prevent lock starvation, make a list of the subscribers, then update
-				subscribed_copy := make([]ConfigWatcher, len(n.subscribed))
-				i := 0
 				for watcher := range n.subscribed {
-					subscribed_copy[i] = watcher
-					i++
-				}
-				n.lock.Unlock()
-
-				for _, watcher := range subscribed_copy {
 					watcher.OnUpdatedConfig(newConfig)
 				}
 			}
+			n.lock.Unlock()
 		}
 	}
 }

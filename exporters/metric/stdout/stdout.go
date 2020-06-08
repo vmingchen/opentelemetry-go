@@ -64,15 +64,14 @@ type Config struct {
 	// LabelEncoder encodes the labels
 	LabelEncoder label.Encoder
 
-	// A default config with metric schedules
-	// Must be set to use a remote config service
-	// If set, we will use it as a default
+	// A default config
+	// It must be set to use a remote config service, since we will
+	// use it in case we can't access the remote config service.
 	// If not set, all metrics will be pushed at the same time according
-	// to a period
+	// to a period.
 	DefaultConfig *notifier.MetricConfig
 
-	// ConfigHost is the IP address of a remote config service
-	// If set, it will be read from so as to dynamically configure the sdk
+	// ConfigHost is the IP address of a remote config service.
 	ConfigHost string
 }
 

@@ -41,7 +41,7 @@ type Config struct {
 	Timeout time.Duration
 
 	// ConfigNotifier supplies configurations for the push controller
-	// from a remote config service
+	// from a remote config service.
 	ConfigNotifier *notifier.ConfigNotifier
 }
 
@@ -95,7 +95,7 @@ func (o timeoutOption) Apply(config *Config) {
 	config.Timeout = time.Duration(o)
 }
 
-// WithConfigNotifier sets the ConfigNotifier configuration option of a Config
+// WithConfigNotifier sets the ConfigNotifier configuration option of a Config.
 func WithConfigNotifier(notifier *notifier.ConfigNotifier) Option {
 	return configNotifierOption{notifier}
 }
