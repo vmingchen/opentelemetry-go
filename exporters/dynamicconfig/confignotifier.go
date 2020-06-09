@@ -66,12 +66,19 @@ type ConfigWatcher interface {
 	// NOTE: A lock will be held during the execution of both these functions.
 	// Please ensure their implementation is not too slow so as to avoid lock-
 	// starvation.
+	//
+	// There is a common lock shared by both functions, ensuring there is no
+	// concurrent invocation of these two functions; therefore caller does not
+	// need a lock protecting access to members of MetricConfig.
 	OnInitialConfig(config *MetricConfig)
 	OnUpdatedConfig(config *MetricConfig)
 }
 
 // A ConfigNotifier monitors a config service for a config changing, then letting
 // all its subscribers know if the config has changed.
+//
+// All fields except for subscribed and config, which are protected by lock,
+// should be read-only once set.
 type ConfigNotifier struct {
 	// Used to shut down the config checking routine when we stop ConfigNotifier.
 	ch chan struct{}
@@ -90,6 +97,8 @@ type ConfigNotifier struct {
 	// non-dynamic.
 	configHost string
 
+	// This protects the config and subscribed fields. Other fields should be 
+	// read-only once set.
 	lock sync.Mutex
 
 	// Set of all the notifier's subscribers.
