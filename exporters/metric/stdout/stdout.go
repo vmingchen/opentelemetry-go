@@ -26,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/label"
 
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
@@ -62,6 +63,16 @@ type Config struct {
 
 	// LabelEncoder encodes the labels
 	LabelEncoder label.Encoder
+
+	// A default config
+	// It must be set to use a remote config service, since we will
+	// use it in case we can't access the remote config service.
+	// If not set, all metrics will be pushed at the same time according
+	// to a period.
+	DefaultConfig *notifier.MetricConfig
+
+	// ConfigHost is the IP address of a remote config service.
+	ConfigHost string
 }
 
 type expoBatch struct {
@@ -139,10 +150,23 @@ func NewExportPipeline(config Config, options ...push.Option) (*push.Controller,
 	if err != nil {
 		return nil, err
 	}
+
+	var configNotifier *notifier.ConfigNotifier = nil
+	if config.DefaultConfig != nil {
+		configNotifier = notifier.New(
+			10*time.Second,
+			config.DefaultConfig,
+			notifier.WithConfigHost(config.ConfigHost),
+		)
+		configNotifier.Start()
+	}
+
 	pusher := push.New(
 		simple.NewWithExactDistribution(),
 		exporter,
-		append([]push.Option{push.WithStateful(true)}, options...)...,
+		append(
+			[]push.Option{push.WithStateful(true), push.WithConfigNotifier(configNotifier)},
+			options...)...,
 	)
 	pusher.Start()
 

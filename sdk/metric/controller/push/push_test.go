@@ -28,6 +28,7 @@ import (
 	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/label"
 	"go.opentelemetry.io/otel/api/metric"
+	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	"go.opentelemetry.io/otel/exporters/metric/test"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
@@ -74,8 +75,9 @@ type testExporter struct {
 }
 
 type testFixture struct {
-	checkpointSet *test.CheckpointSet
-	exporter      *testExporter
+	checkpointSet  *test.CheckpointSet
+	exporter       *testExporter
+	configNotifier *notifier.ConfigNotifier
 }
 
 type testSelector struct{}
@@ -86,9 +88,11 @@ func newFixture(t *testing.T) testFixture {
 	exporter := &testExporter{
 		t: t,
 	}
+	configNotifier := notifier.New(time.Minute, &notifier.MetricConfig{Period: time.Second})
 	return testFixture{
-		checkpointSet: checkpointSet,
-		exporter:      exporter,
+		checkpointSet:  checkpointSet,
+		exporter:       exporter,
+		configNotifier: configNotifier,
 	}
 }
 
@@ -148,6 +152,7 @@ func TestPushTicker(t *testing.T) {
 		fix.exporter,
 		push.WithPeriod(time.Second),
 		push.WithResource(testResource),
+		push.WithConfigNotifier(fix.configNotifier),
 	)
 	meter := p.Provider().Meter("name")
 
@@ -229,6 +234,7 @@ func TestPushExportError(t *testing.T) {
 				fix.exporter,
 				push.WithPeriod(time.Second),
 				push.WithResource(testResource),
+				push.WithConfigNotifier(fix.configNotifier),
 			)
 
 			mock := controllerTest.NewMockClock()
