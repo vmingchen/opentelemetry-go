@@ -28,7 +28,7 @@ import (
 
 	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
-	"go.opentelemetry.io/otel/sdk/export/metric/aggregator"
+	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
 	"go.opentelemetry.io/otel/sdk/metric/selector/simple"
 )
@@ -109,7 +109,7 @@ func NewRawExporter(config Config) (*Exporter, error) {
 	} else {
 		for _, q := range config.Quantiles {
 			if q < 0 || q > 1 {
-				return nil, aggregator.ErrInvalidQuantile
+				return nil, aggregation.ErrInvalidQuantile
 			}
 		}
 	}
@@ -188,7 +188,7 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 
 		var expose expoLine
 
-		if sum, ok := agg.(aggregator.Sum); ok {
+		if sum, ok := agg.(aggregation.Sum); ok {
 			value, err := sum.Sum()
 			if err != nil {
 				return err
@@ -196,7 +196,7 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 			expose.Sum = value.AsInterface(kind)
 		}
 
-		if mmsc, ok := agg.(aggregator.MinMaxSumCount); ok {
+		if mmsc, ok := agg.(aggregation.MinMaxSumCount); ok {
 			count, err := mmsc.Count()
 			if err != nil {
 				return err
@@ -215,7 +215,7 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 			}
 			expose.Min = min.AsInterface(kind)
 
-			if dist, ok := agg.(aggregator.Distribution); ok && len(e.config.Quantiles) != 0 {
+			if dist, ok := agg.(aggregation.Distribution); ok && len(e.config.Quantiles) != 0 {
 				summary := make([]expoQuantile, len(e.config.Quantiles))
 				expose.Quantiles = summary
 
@@ -232,7 +232,7 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 					}
 				}
 			}
-		} else if lv, ok := agg.(aggregator.LastValue); ok {
+		} else if lv, ok := agg.(aggregation.LastValue); ok {
 			value, timestamp, err := lv.LastValue()
 			if err != nil {
 				return err
