@@ -12,30 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package test
 
 import (
-	"log"
-	"time"
+	"testing"
 
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
-	metricstdout "go.opentelemetry.io/otel/exporters/metric/stdout"
-	"go.opentelemetry.io/otel/sdk/metric/controller/push"
+	"github.com/stretchr/testify/require"
 )
 
-func initMeter() *push.Controller {
-	pusher, err := metricstdout.InstallNewPipeline(metricstdout.Config{
-		DefaultConfig: &notifier.MetricConfig{Period: time.Minute},
-		ConfigHost:    "FAKE_HOSTNAME",
-	})
-	if err != nil {
-		log.Panicf("failed to initialize metric stdout exporter %v", err)
-	}
-	return pusher
-}
+func TestUnslice(t *testing.T) {
+	in := make([]NoopAggregator, 2)
 
-func main() {
-	defer initMeter().Stop()
+	a, b := Unslice2(in)
 
-	time.Sleep(5 * time.Minute)
+	require.Equal(t, a.(*NoopAggregator), &in[0])
+	require.Equal(t, b.(*NoopAggregator), &in[1])
 }

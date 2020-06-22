@@ -24,9 +24,9 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/api/global"
+	"go.opentelemetry.io/otel/api/kv"
 	"go.opentelemetry.io/otel/api/label"
 
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	"go.opentelemetry.io/otel/sdk/export/metric/aggregation"
 	"go.opentelemetry.io/otel/sdk/metric/controller/push"
@@ -63,16 +63,6 @@ type Config struct {
 
 	// LabelEncoder encodes the labels
 	LabelEncoder label.Encoder
-
-	// A default config
-	// It must be set to use a remote config service, since we will
-	// use it in case we can't access the remote config service.
-	// If not set, all metrics will be pushed at the same time according
-	// to a period.
-	DefaultConfig *notifier.MetricConfig
-
-	// ConfigHost is the IP address of a remote config service.
-	ConfigHost string
 }
 
 type expoBatch struct {
@@ -150,23 +140,10 @@ func NewExportPipeline(config Config, options ...push.Option) (*push.Controller,
 	if err != nil {
 		return nil, err
 	}
-
-	var configNotifier *notifier.ConfigNotifier = nil
-	if config.DefaultConfig != nil {
-		configNotifier = notifier.New(
-			10*time.Second,
-			config.DefaultConfig,
-			notifier.WithConfigHost(config.ConfigHost),
-		)
-		configNotifier.Start()
-	}
-
 	pusher := push.New(
 		simple.NewWithExactDistribution(),
 		exporter,
-		append(
-			[]push.Option{push.WithStateful(true), push.WithConfigNotifier(configNotifier)},
-			options...)...,
+		append([]push.Option{push.WithStateful(true)}, options...)...,
 	)
 	pusher.Start()
 
@@ -182,9 +159,19 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 	}
 	aggError = checkpointSet.ForEach(func(record export.Record) error {
 		desc := record.Descriptor()
-		agg := record.Aggregator()
+		agg := record.Aggregation()
 		kind := desc.NumberKind()
 		encodedResource := record.Resource().Encoded(e.config.LabelEncoder)
+
+		var instLabels []kv.KeyValue
+		if name := desc.InstrumentationName(); name != "" {
+			instLabels = append(instLabels, kv.String("instrumentation.name", name))
+			if version := desc.InstrumentationVersion(); version != "" {
+				instLabels = append(instLabels, kv.String("instrumentation.version", version))
+			}
+		}
+		instSet := label.NewSet(instLabels...)
+		encodedInstLabels := instSet.Encoded(e.config.LabelEncoder)
 
 		var expose expoLine
 
@@ -254,10 +241,14 @@ func (e *Exporter) Export(_ context.Context, checkpointSet export.CheckpointSet)
 
 		sb.WriteString(desc.Name())
 
-		if len(encodedLabels) > 0 || len(encodedResource) > 0 {
+		if len(encodedLabels) > 0 || len(encodedResource) > 0 || len(encodedInstLabels) > 0 {
 			sb.WriteRune('{')
 			sb.WriteString(encodedResource)
-			if len(encodedLabels) > 0 && len(encodedResource) > 0 {
+			if len(encodedInstLabels) > 0 && len(encodedResource) > 0 {
+				sb.WriteRune(',')
+			}
+			sb.WriteString(encodedInstLabels)
+			if len(encodedLabels) > 0 && (len(encodedInstLabels) > 0 || len(encodedResource) > 0) {
 				sb.WriteRune(',')
 			}
 			sb.WriteString(encodedLabels)

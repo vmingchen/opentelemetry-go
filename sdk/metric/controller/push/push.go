@@ -22,7 +22,6 @@ import (
 	"go.opentelemetry.io/otel/api/global"
 	"go.opentelemetry.io/otel/api/metric"
 	"go.opentelemetry.io/otel/api/metric/registry"
-	notifier "go.opentelemetry.io/otel/exporters/dynamicconfig"
 	export "go.opentelemetry.io/otel/sdk/export/metric"
 	sdk "go.opentelemetry.io/otel/sdk/metric"
 	controllerTime "go.opentelemetry.io/otel/sdk/metric/controller/time"
@@ -40,12 +39,11 @@ type Controller struct {
 	integrator  *simple.Integrator
 	exporter    export.Exporter
 	wg          sync.WaitGroup
-	ch          chan bool
+	ch          chan struct{}
 	period      time.Duration
 	timeout     time.Duration
 	clock       controllerTime.Clock
 	ticker      controllerTime.Ticker
-	configNotifier *notifier.ConfigNotifier
 }
 
 // New constructs a Controller, an implementation of metric.Provider,
@@ -72,11 +70,10 @@ func New(selector export.AggregationSelector, exporter export.Exporter, opts ...
 		accumulator: impl,
 		integrator:  integrator,
 		exporter:    exporter,
-		ch:          make(chan bool),
+		ch:          make(chan struct{}),
 		period:      c.Period,
 		timeout:     c.Timeout,
 		clock:       controllerTime.RealClock{},
-		configNotifier: c.ConfigNotifier,
 	}
 }
 
@@ -103,10 +100,6 @@ func (c *Controller) Start() {
 		return
 	}
 
-	if c.configNotifier != nil {
-		c.configNotifier.Register(c)
-	}
-
 	c.ticker = c.clock.Ticker(c.period)
 	c.wg.Add(1)
 	go c.run(c.ch)
@@ -126,42 +119,14 @@ func (c *Controller) Stop() {
 	c.ch = nil
 	c.wg.Wait()
 	c.ticker.Stop()
-	c.ticker = nil
 
 	c.tick()
-
-	if c.configNotifier != nil {
-		c.configNotifier.Unregister(c)
-	}
 }
 
-func (c *Controller) OnInitialConfig(config *notifier.MetricConfig) {
-	c.period = config.Period
-}
-
-func (c *Controller) OnUpdatedConfig(config *notifier.MetricConfig) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
-
-	// Stop the existing ticker
-	// Make a new ticker with the new sampling period
-	c.ticker.Stop()
-	c.period = config.Period
-	c.ticker = c.clock.Ticker(config.Period)
-
-	// Let the controller know to check the new ticker
-	c.ch <- true
-}
-
-func (c *Controller) run(ch chan bool) {
+func (c *Controller) run(ch chan struct{}) {
 	for {
 		select {
-		// If signal receives 'true', break to check the new ticker
-		// If signal receives 'false', that means controller is stopping
-		case signal := <-ch:
-			if signal {
-				break
-			}
+		case <-ch:
 			c.wg.Done()
 			return
 		case <-c.ticker.C():
@@ -177,12 +142,13 @@ func (c *Controller) tick() {
 	c.integrator.Lock()
 	defer c.integrator.Unlock()
 
+	c.integrator.StartCollection()
 	c.accumulator.Collect(ctx)
+	if err := c.integrator.FinishCollection(); err != nil {
+		global.Handle(err)
+	}
 
-	err := c.exporter.Export(ctx, c.integrator.CheckpointSet())
-	c.integrator.FinishedCollection()
-
-	if err != nil {
+	if err := c.exporter.Export(ctx, c.integrator.CheckpointSet()); err != nil {
 		global.Handle(err)
 	}
 }
